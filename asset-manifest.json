@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/dudarims/static/css/main.e6c13ad2.css",
+    "main.js": "/dudarims/static/js/main.da5b743c.js",
+    "static/js/453.ad6eb26e.chunk.js": "/dudarims/static/js/453.ad6eb26e.chunk.js",
+    "index.html": "/dudarims/index.html",
+    "main.e6c13ad2.css.map": "/dudarims/static/css/main.e6c13ad2.css.map",
+    "main.da5b743c.js.map": "/dudarims/static/js/main.da5b743c.js.map",
+    "453.ad6eb26e.chunk.js.map": "/dudarims/static/js/453.ad6eb26e.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.e6c13ad2.css",
+    "static/js/main.da5b743c.js"
+  ]
+}
