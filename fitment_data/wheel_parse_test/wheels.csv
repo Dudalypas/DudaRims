@@ -1,0 +1,2 @@
+wheel_class_name,official_wheel_name,brand,color_variant,diameter_in,width_j,et,pcd,cb,bolt_count,designed_for_models,generation,year_from,year_to,tyre_size,oem_part_code,notes,source_type,source_page,extraction_confidence,needs_manual_review
+Ilias,ILIAS,Skoda,silver metallic,16.0,6.5,46.0,5x112,,5,Škoda Octavia 3,,,,205/55 R16,5E0071496D8Z8,,skoda_parts_reseller,https://www.skoda-parts.com/spare-part/5e0071496d8z8-aluminium-rim-16-ilias-skoda-36239.html,0.95,False
