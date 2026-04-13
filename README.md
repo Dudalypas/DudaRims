@@ -240,4 +240,4 @@ This is designed so records can be safely consumed by a Flutter app or local JSO
 
 - Some websites load data dynamically; this implementation avoids Selenium by default.
 - HTML structures can change and require parser selector updates.
-- Wheel-class mapping confidence can remain ambiguous for style variants and generic classes (for example `Steel_Wheel`).
+- Wheel-class mapping confidence can remain ambiguous for style variants and generic classes (for example `Steel_Wheel`)
