@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
@@ -45,8 +45,8 @@ class WheelDetectorService {
     _inputShape = _interpreter!.getInputTensor(0).shape;
     _outputShape = _interpreter!.getOutputTensor(0).shape;
 
-    print('[WheelDetector] Input tensor shape: $_inputShape');
-    print('[WheelDetector] Output tensor shape: $_outputShape');
+    debugPrint('[WheelDetector] Input tensor shape: $_inputShape');
+    debugPrint('[WheelDetector] Output tensor shape: $_outputShape');
   }
 
   Future<WheelDetectionRunResult> detectBest(
@@ -93,7 +93,7 @@ class WheelDetectorService {
       originalHeight: oriented.height,
     );
 
-    print(
+    debugPrint(
       '[WheelDetector] Raw candidates above threshold: ${candidates.length}',
     );
 
@@ -101,7 +101,7 @@ class WheelDetectorService {
     final best = kept.isEmpty ? null : kept.first;
 
     if (best != null) {
-      print(
+      debugPrint(
         '[WheelDetector] Final box: '
         'left=${best.left.toStringAsFixed(1)}, '
         'top=${best.top.toStringAsFixed(1)}, '
@@ -110,13 +110,13 @@ class WheelDetectorService {
         'score=${best.score.toStringAsFixed(3)}',
       );
     } else {
-      print('[WheelDetector] No final detection selected after NMS.');
+      debugPrint('[WheelDetector] No final detection selected after NMS.');
     }
 
     File? debugFile;
     if (saveDebugImage && best != null) {
       debugFile = await _saveDebugOverlay(oriented, best);
-      print('[WheelDetector] Debug image saved: ${debugFile.path}');
+      debugPrint('[WheelDetector] Debug image saved: ${debugFile.path}');
     }
 
     return WheelDetectionRunResult(

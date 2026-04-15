@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../app/state/app_state.dart';
+import '../../core/state/app_state.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -17,25 +17,27 @@ class SettingsScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           Card(
-            child: SwitchListTile.adaptive(
-              value: isDark,
+            child: SwitchListTile(
               title: const Text('Tamsi tema'),
-              subtitle: const Text('Numatytoji premium išvaizda'),
-              onChanged: (value) => appState.setThemeMode(value ? ThemeMode.dark : ThemeMode.light),
+              subtitle: const Text('Perjungti tarp šviesios ir tamsios išvaizdos.'),
+              value: isDark,
+              onChanged: (value) {
+                appState.setThemeMode(value ? ThemeMode.dark : ThemeMode.light);
+              },
             ),
           ),
           const SizedBox(height: 12),
           const Card(
             child: ListTile(
-              title: Text('PCD / ET / CB pagrindai'),
-              subtitle: Text('Greitai: PCD ir varžtai turi sutapti, ET ir plotis turi likti OEM ribose.'),
+              title: Text('DUK (netrukus)'),
+              subtitle: Text('Trumpi atsakymai apie suderinamumą ir ratlankių žymėjimus.'),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           const Card(
             child: ListTile(
-              title: Text('DUK (vieta ateičiai)'),
-              subtitle: Text('Čia galite pridėti trumpus fitment paaiškinimus ir patarimus.'),
+              title: Text('Apie PCD / ET / CB (netrukus)'),
+              subtitle: Text('Paaiškinimai pradedantiesiems ir praktiniai pavyzdžiai.'),
             ),
           ),
         ],

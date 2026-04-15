@@ -3,16 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
-import '../../app/state/app_state.dart';
-import '../../ml/recognizer_controller.dart';
-import '../../ml/prediction.dart';
-import '../../models/detection_result.dart';
-import '../car/car_picker_sheet.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/state/app_state.dart';
+import '../../core/theme/theme_tokens.dart';
+import '../../services/local_fitment_repository.dart';
+import '../../services/mock_recognition_service.dart';
+import '../../services/recognition_service.dart';
+import '../../services/tflite_recognition_service.dart';
+import '../car/car_selection_screen.dart';
+import '../result/recognition_result_screen.dart';
 import '../settings/settings_screen.dart';
-import '../../services/wheel_crop_service.dart';
-import '../../services/wheel_detector_service.dart';
-import '../result/result_screen.dart';
-import '../../ml/tflite_wheel_pipeline.dart';
 
 class CaptureScreen extends StatefulWidget {
   const CaptureScreen({super.key});
@@ -23,32 +23,28 @@ class CaptureScreen extends StatefulWidget {
 
 class _CaptureScreenState extends State<CaptureScreen> {
   final _picker = ImagePicker();
-  XFile? _image;
+  late final RecognitionService _recognitionService;
 
-  final _controller = RecognizerController(TfliteWheelPipeline());
-  final _detector = WheelDetectorService();
-  final _cropService = const WheelCropService();
-
-  File? _classificationImage;
-  File? _debugImage;
-  DetectionResult? _detection;
-  String _pipelineMessage = '';
+  XFile? _preview;
   bool _isProcessing = false;
-  String _processingText = 'Analizuojama...';
+  String? _processingError;
 
-  Future<void> _openCarPicker() async {
-    final appState = context.read<AppState>();
-    final selected = await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => CarPickerSheet(
-        fitments: appState.vehicleFitments,
-        initialSelection: appState.selectedCar,
-      ),
-    );
-
+  void _clearPreview() {
     if (!mounted) return;
-    await appState.setSelectedCar(selected);
+    setState(() {
+      _preview = null;
+      _processingError = null;
+      _isProcessing = false;
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final repository = LocalFitmentRepository();
+    _recognitionService = AppConstants.enableRealMlInference
+        ? TfliteRecognitionService(repository: repository)
+        : MockRecognitionService(repository);
   }
 
   Future<void> _pick(ImageSource source) async {
@@ -58,120 +54,87 @@ class _CaptureScreenState extends State<CaptureScreen> {
       maxWidth: 1600,
     );
     if (img == null) return;
-    setState(() => _image = img);
-  }
+    if (!mounted) return;
 
-  Future<void> _recognize() async {
-    final img = _image;
-    if (img == null) return;
-
+    final imageFile = File(img.path);
     setState(() {
+      _preview = img;
       _isProcessing = true;
-      _processingText = 'Analizuojama ratlankio geometrija...';
+      _processingError = null;
     });
-
-    final originalFile = File(img.path);
-    File classifierInput = originalFile;
-    DetectionResult? detection;
-    File? debugImage;
-    var message = 'Ratas neaptiktas, klasifikacijai naudota originali nuotrauka';
 
     try {
-      final detectionRun = await _detector.detectBest(
-        originalFile,
-        saveDebugImage: true,
+      final minTransition = Future<void>.delayed(
+        const Duration(milliseconds: 520),
       );
-      detection = detectionRun.bestDetection;
-      debugImage = detectionRun.debugImageFile;
+      final outcomeFuture = _recognitionService.analyze(imageFile);
+      final outcome = await outcomeFuture;
+      await minTransition;
 
-      if (detection != null) {
-        classifierInput = await _cropService.cropDetectedWheel(originalFile, detection);
-        message = 'Ratas aptiktas ir apkirptas prieš klasifikaciją';
-      }
-
-      if (mounted) {
-        setState(() {
-          _processingText = 'Lyginama su ratlankių duomenų baze...';
-        });
-      }
-    } catch (e) {
-      message = 'Rato detektorius nesuveikė, klasifikacijai naudota originali nuotrauka';
-      debugPrint('[WheelDetector] Failure: $e');
-    }
-
-    setState(() {
-      _classificationImage = classifierInput;
-      _debugImage = debugImage;
-      _detection = detection;
-      _pipelineMessage = message;
-    });
-
-    // Hook point: replace this with another recognizer backend if model pipeline changes.
-    await _controller.recognize(classifierInput);
-    final List<Prediction> predictions = _controller.value.results;
-
-    if (!mounted) return;
-    setState(() {
-      _isProcessing = false;
-    });
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ResultScreen(
-          imageFile: originalFile,
-          classifierInputImageFile: _classificationImage,
-          detectorDebugImageFile: _debugImage,
-          detection: _detection,
-          pipelineMessage: _pipelineMessage,
-          predictions: predictions,
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              RecognitionResultScreen(imageFile: imageFile, outcome: outcome),
         ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _detector.dispose();
-    super.dispose();
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _processingError = 'Nepavyko atpažinti ratlankio: $e';
+      });
+    } finally {
+      _clearPreview();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasImage = _image != null;
-    final appState = context.watch<AppState>();
-    final selectedCar = appState.selectedCar;
+    final selectedCar = context.watch<AppState>().selectedCar;
+    final hasPreview = _preview != null;
     final carLabel = selectedCar == null
         ? 'Pasirink automobilį'
-        : '${selectedCar.model} ${selectedCar.generationLabel}';
+        : '${selectedCar.model ?? 'Skoda'} ${selectedCar.generationLabel}';
+    final colors = Theme.of(context).colorScheme;
 
     return Scaffold(
       body: Stack(
         children: [
           Positioned.fill(
-            child: !hasImage
-                ? Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0xFF101722), Color(0xFF0C1017)],
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 280),
+              child: hasPreview
+                  ? Image.file(
+                      File(_preview!.path),
+                      fit: BoxFit.cover,
+                      key: ValueKey(_preview!.path),
+                    )
+                  : Container(
+                      key: const ValueKey('camera-bg'),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            colors.surfaceContainerHighest,
+                            colors.surfaceContainerLow,
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
                       ),
                     ),
-                    child: const Center(
-                      child: Text('Nufotografuok arba pasirink ratlankio nuotrauką'),
-                    ),
-                  )
-                : Image.file(File(_image!.path), fit: BoxFit.cover),
+            ),
           ),
           Positioned.fill(
-            child: DecoratedBox(
+            child: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
+                  colors: [
+                    colors.cameraOverlaySoft,
+                    Colors.transparent,
+                    colors.cameraOverlayStrong,
+                  ],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.black.withValues(alpha: 0.55), Colors.black.withValues(alpha: 0.25), Colors.black.withValues(alpha: 0.72)],
-                  stops: const [0.0, 0.45, 1.0],
                 ),
               ),
             ),
@@ -185,96 +148,144 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     children: [
                       Expanded(
                         child: ActionChip(
-                          avatar: const Icon(Icons.directions_car, size: 18),
-                          label: Text(carLabel, overflow: TextOverflow.ellipsis),
-                          onPressed: appState.isLoadingData ? null : _openCarPicker,
+                          avatar: const Icon(
+                            Icons.directions_car_filled_outlined,
+                          ),
+                          label: Text(carLabel),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const CarSelectionScreen(),
+                              ),
+                            );
+                          },
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 10),
                       IconButton.filledTonal(
                         onPressed: () {
                           Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                            MaterialPageRoute(
+                              builder: (_) => const SettingsScreen(),
+                            ),
                           );
                         },
-                        icon: const Icon(Icons.tune),
+                        icon: const Icon(Icons.settings_outlined),
+                        tooltip: 'Nustatymai',
                       ),
                     ],
                   ),
-                  const Spacer(),
-                  Container(
-                    width: 280,
-                    height: 280,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 1.2),
-                    ),
-                    child: Center(
-                      child: Icon(Icons.radio_button_unchecked_rounded, size: 180, color: Colors.white.withValues(alpha: 0.22)),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Atpažink Skoda ratlankį',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Nufotografuok arba įkelk ratlankio nuotrauką. Tai atpažinimo žingsnis, o suderinamumą su automobiliu tikrinsime po to.',
+                    style: TextStyle(color: colors.mutedText),
+                  ),
+                  const SizedBox(height: 18),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    child: hasPreview
+                        ? ClipRRect(
+                            key: ValueKey(_preview!.path),
+                            borderRadius: BorderRadius.circular(18),
+                            child: AspectRatio(
+                              aspectRatio: 4 / 3,
+                              child: Image.file(
+                                File(_preview!.path),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          )
+                        : Container(
+                            key: const ValueKey('hub-placeholder'),
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: colors.panelSurface,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: colors.outlineVariant),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.photo_camera_back_outlined,
+                                  color: colors.primary,
+                                  size: 28,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'Pasirink įvesties būdą žemiau ir pradėk atpažinimą.',
+                                    style: TextStyle(color: colors.mutedText),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                  ),
+                  const SizedBox(height: 20),
+                  if (_isProcessing)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: colors.panelSurface,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Apdorojama...',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: colors.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const LinearProgressIndicator(minHeight: 4),
+                        ],
+                      ),
+                    ),
+                  if (_processingError != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _processingError!,
+                      style: TextStyle(color: colors.error),
+                    ),
+                  ],
                   const Spacer(),
-                  Row(
-                    children: [
-                      IconButton.filledTonal(
-                        onPressed: () => _pick(ImageSource.gallery),
-                        icon: const Icon(Icons.photo_library_outlined),
-                      ),
-                      const Spacer(),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(44),
-                        onTap: hasImage ? _recognize : () => _pick(ImageSource.camera),
-                        child: Container(
-                          width: 88,
-                          height: 88,
-                          padding: const EdgeInsets.all(5),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 3),
-                          ),
-                          child: Container(
-                            decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton.filledTonal(
-                        onPressed: () => _pick(ImageSource.camera),
-                        icon: const Icon(Icons.camera_alt_outlined),
-                      ),
-                    ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _isProcessing
+                          ? null
+                          : () => _pick(ImageSource.camera),
+                      icon: const Icon(Icons.camera_alt_rounded),
+                      label: const Text('Fotografuoti'),
+                    ),
                   ),
                   const SizedBox(height: 10),
-                  const Text('Nuskenuok ratlankį ir gauk suderinamumo įvertinimą', style: TextStyle(color: Colors.white70)),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _isProcessing
+                          ? null
+                          : () => _pick(ImageSource.gallery),
+                      icon: const Icon(Icons.photo_library_outlined),
+                      label: const Text('Įkelti nuotrauką'),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
-          if (_isProcessing)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.66),
-                child: Center(
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(
-                            width: 44,
-                            height: 44,
-                            child: CircularProgressIndicator(strokeWidth: 3),
-                          ),
-                          const SizedBox(height: 14),
-                          Text(_processingText, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );

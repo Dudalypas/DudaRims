@@ -83,4 +83,24 @@ class VehicleFitment {
     }
     return gen;
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'brand': brand,
+      'model': model,
+      'generation': generation,
+      'year_from': yearFrom,
+      'year_to': yearTo,
+      'pcd': pcd,
+      'cb': cb,
+      'bolt_count': boltCount,
+      'thread_size': threadSize,
+      'diameter_min_in': diameterMinIn,
+      'diameter_max_in': diameterMaxIn,
+      'width_min_j': widthMinJ,
+      'width_max_j': widthMaxJ,
+      'et_min': etMin,
+      'et_max': etMax,
+    };
+  }
 }

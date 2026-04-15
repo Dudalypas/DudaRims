@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
@@ -15,12 +15,13 @@ class TfliteWheelPipeline implements WheelPipeline {
 
   Interpreter? _interpreter;
   List<String>? _labels;
-  List<int>? _inputShape;  // [1,224,224,3]
+  List<int>? _inputShape; // [1,224,224,3]
   List<int>? _outputShape; // [1,21]
   Future<void>? _loadFuture;
 
   TfliteWheelPipeline({
-    this.modelAsset = 'assets/models/wheel_classifier_cropped_best_float32v4.tflite',
+    this.modelAsset =
+        'assets/models/wheel_classifier_cropped_best_float32v4.tflite',
     this.labelsAsset = 'assets/labels/labels.txt',
   });
 
@@ -42,9 +43,9 @@ class TfliteWheelPipeline implements WheelPipeline {
     _inputShape = _interpreter!.getInputTensor(0).shape;
     _outputShape = _interpreter!.getOutputTensor(0).shape;
 
-    // debug:
-    
-    print('Input: $_inputShape | Output: $_outputShape | Labels: ${_labels!.length}');
+    debugPrint(
+      'Input: $_inputShape | Output: $_outputShape | Labels: ${_labels!.length}',
+    );
   }
 
   @override
@@ -64,7 +65,9 @@ class TfliteWheelPipeline implements WheelPipeline {
     final w = inputShape[2];
 
     // center crop square -> resize
-    final oriented = img.bakeOrientation(decoded); // labai svarbu S23 fotkėms (EXIF)
+    final oriented = img.bakeOrientation(
+      decoded,
+    ); // labai svarbu S23 fotkėms (EXIF)
     final resized = img.copyResize(oriented, width: w, height: h);
 
     // input tensor float32 [1,h,w,3] values 0..1
@@ -97,13 +100,6 @@ class TfliteWheelPipeline implements WheelPipeline {
       final label = (idx < labels.length) ? labels[idx] : 'class_$idx';
       return Prediction(label, score);
     }).toList();
-  }
-
-  img.Image _centerCropSquare(img.Image src) {
-    final size = min(src.width, src.height);
-    final x = (src.width - size) ~/ 2;
-    final y = (src.height - size) ~/ 2;
-    return img.copyCrop(src, x: x, y: y, width: size, height: size);
   }
 
   List<double> _softmax(List<double> v) {

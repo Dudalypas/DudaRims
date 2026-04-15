@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'state/app_state.dart';
-import 'theme/app_theme.dart';
+import '../core/state/app_state.dart';
+import '../core/theme/app_theme.dart';
 import '../features/capture/capture_screen.dart';
 
 class App extends StatelessWidget {
@@ -19,9 +19,9 @@ class App extends StatelessWidget {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
             title: 'DudaRims',
-            themeMode: state.themeMode,
             theme: AppTheme.light(),
             darkTheme: AppTheme.dark(),
+            themeMode: state.themeMode,
             home: const CaptureScreen(),
           );
         },
