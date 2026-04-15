@@ -1,0 +1,27 @@
+workflows:
+  ios-workflow:
+    name: iOS Flutter Build
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+
+    environment:
+      flutter: stable
+      xcode: 26.1.x
+
+    scripts:
+      - name: Get Flutter packages
+        script: |
+          flutter pub get
+
+      - name: Install CocoaPods
+        script: |
+          find . -name "Podfile" -execdir pod install \;
+
+      - name: Build unsigned iOS app
+        script: |
+          flutter build ios --debug --no-codesign
+
+    artifacts:
+      - build/ios/**/*
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
