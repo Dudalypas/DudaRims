@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:math';
 
-import '../core/constants/app_constants.dart';
 import '../models/recognition_candidate.dart';
 import '../models/recognition_outcome.dart';
 import 'local_fitment_repository.dart';
@@ -38,13 +37,15 @@ class MockRecognitionService implements RecognitionService {
     for (var i = 0; i < picked.length; i++) {
       final scoreDrop = i * (top1High ? 0.09 : 0.06);
       final jitter = random.nextDouble() * 0.035;
-      final confidence = (baseTop - scoreDrop - jitter).clamp(0.05, 0.98).toDouble();
-      candidates.add(RecognitionCandidate(label: picked[i], confidence: confidence));
+      final confidence = (baseTop - scoreDrop - jitter)
+          .clamp(0.05, 0.98)
+          .toDouble();
+      candidates.add(
+        RecognitionCandidate(label: picked[i], confidence: confidence),
+      );
     }
 
     candidates.sort((a, b) => b.confidence.compareTo(a.confidence));
-    final isConfident = candidates.first.confidence >= AppConstants.recognitionConfidenceThreshold;
-
-    return RecognitionOutcome(top5: candidates, isConfident: isConfident);
+    return RecognitionOutcome(top5: candidates);
   }
 }

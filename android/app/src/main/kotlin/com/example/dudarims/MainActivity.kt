@@ -1,4 +1,4 @@
-package com.example.flutter_bandymas
+package com.example.dudarims
 
 import io.flutter.embedding.android.FlutterActivity
 

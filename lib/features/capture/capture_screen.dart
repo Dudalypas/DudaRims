@@ -63,29 +63,47 @@ class _CaptureScreenState extends State<CaptureScreen> {
       _processingError = null;
     });
 
-    try {
-      final minTransition = Future<void>.delayed(
-        const Duration(milliseconds: 520),
-      );
-      final outcomeFuture = _recognitionService.analyze(imageFile);
-      final outcome = await outcomeFuture;
-      await minTransition;
+    var keepTrying = true;
+    while (keepTrying) {
+      try {
+        final minTransition = Future<void>.delayed(
+          const Duration(milliseconds: 520),
+        );
+        final outcomeFuture = _recognitionService.analyze(imageFile);
+        final outcome = await outcomeFuture;
+        await minTransition;
 
-      if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) =>
-              RecognitionResultScreen(imageFile: imageFile, outcome: outcome),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _processingError = 'Nepavyko atpažinti ratlankio: $e';
-      });
-    } finally {
-      _clearPreview();
+        if (!mounted) return;
+        final action = await Navigator.of(context)
+            .push<RecognitionResultAction>(
+              MaterialPageRoute(
+                builder: (_) => RecognitionResultScreen(
+                  imageFile: imageFile,
+                  outcome: outcome,
+                ),
+              ),
+            );
+
+        if (action == RecognitionResultAction.retrySamePhoto) {
+          if (!mounted) return;
+          setState(() {
+            _isProcessing = true;
+            _processingError = null;
+          });
+          continue;
+        }
+
+        keepTrying = false;
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _processingError = 'Nepavyko atpažinti ratlankio: $e';
+        });
+        keepTrying = false;
+      }
     }
+
+    _clearPreview();
   }
 
   @override

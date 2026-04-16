@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import '../../core/state/app_state.dart';
 import '../../core/theme/theme_tokens.dart';
 import '../../models/fitment_result.dart';
-import '../../models/vehicle_fitment.dart';
 import '../../models/wheel_spec.dart';
 import '../../services/fitment_checker.dart';
 import '../../services/local_fitment_repository.dart';
@@ -163,8 +162,20 @@ class _RimDetailsScreenState extends State<RimDetailsScreen> {
           children: _variants
               .map((variant) {
                 final selected = identical(variant, _selectedVariant);
-                final label =
-                    '${variant.diameterIn?.toStringAsFixed(0) ?? '-'}"';
+                final diameter = variant.diameterIn == null
+                    ? '-'
+                    : variant.diameterIn!.toStringAsFixed(
+                        variant.diameterIn! % 1 == 0 ? 0 : 1,
+                      );
+                final width = variant.widthJ == null
+                    ? '-'
+                    : variant.widthJ!.toStringAsFixed(
+                        variant.widthJ! % 1 == 0 ? 0 : 1,
+                      );
+                final et = variant.et == null
+                    ? '-'
+                    : variant.et!.toStringAsFixed(variant.et! % 1 == 0 ? 0 : 1);
+                final label = '$diameter" • ${width}J • ET$et';
                 return ChoiceChip(
                   selected: selected,
                   label: Text(label),
@@ -216,6 +227,10 @@ class _RimDetailsScreenState extends State<RimDetailsScreen> {
             row('ET', '${variant.et ?? '-'}'),
             row('PCD', variant.pcd ?? '-'),
             row('CB', variant.cb?.toString() ?? '-'),
+            row(
+              'Apdaila',
+              variant.finishes.isEmpty ? '-' : variant.finishes.join(', '),
+            ),
             row('Modeliai', variant.designedForModels ?? '-'),
           ],
         ),
@@ -269,6 +284,9 @@ class _RimDetailsScreenState extends State<RimDetailsScreen> {
 
     final result = _checker.check(variant, selectedCar);
     final statusColor = _statusColor(result.status);
+    final issues = result.checks
+        .where((c) => c.status != FitmentParameterStatus.ok)
+        .toList(growable: false);
 
     return Card(
       child: Padding(
@@ -326,32 +344,35 @@ class _RimDetailsScreenState extends State<RimDetailsScreen> {
               ),
             ),
             const SizedBox(height: 10),
-            if (result.reasons.isNotEmpty) ...[
+            if (issues.isNotEmpty) ...[
               const Text(
                 'Paaiškinimai',
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
-              ...result.reasons.map(
-                (r) => Padding(
+              ...issues.map(
+                (issue) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Text('• ${r.message}'),
+                  child: Text('• ${issue.message}'),
                 ),
               ),
             ],
             const SizedBox(height: 8),
             ExpansionTile(
               title: const Text('Techninė detalizacija'),
-              children: _technicalRows(variant, selectedCar)
+              children: result.checks
                   .map(
-                    (row) => ListTile(
+                    (check) => ListTile(
                       dense: true,
-                      title: Text(row.$1),
+                      title: Text(_parameterLabel(check.parameter)),
+                      subtitle: Text(
+                        'Ratlankis: ${check.rimValue} | Automobilio riba: ${check.expectedValue}',
+                      ),
                       trailing: Text(
-                        row.$2,
+                        _statusText(check.status),
                         style: TextStyle(
-                          color: row.$3,
-                          fontWeight: FontWeight.w600,
+                          color: _statusColorByCheck(check.status),
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
@@ -364,82 +385,41 @@ class _RimDetailsScreenState extends State<RimDetailsScreen> {
     );
   }
 
-  List<(String, String, Color)> _technicalRows(
-    WheelSpec wheel,
-    VehicleFitment car,
-  ) {
-    final colors = Theme.of(context).colorScheme;
-    Color ok = Colors.green;
-    Color warn = Colors.orange;
-    Color bad = Colors.red;
-    Color neutral = colors.onSurfaceVariant;
-
-    String compareRange(double? value, double? min, double? max) {
-      if (value == null || min == null || max == null) return 'Nežinoma';
-      if (value >= min && value <= max) return 'Atitinka';
-      return 'Už ribų';
+  String _parameterLabel(FitmentParameter parameter) {
+    switch (parameter) {
+      case FitmentParameter.diameter:
+        return 'Skersmuo';
+      case FitmentParameter.width:
+        return 'Plotis';
+      case FitmentParameter.et:
+        return 'ET';
+      case FitmentParameter.pcd:
+        return 'PCD';
+      case FitmentParameter.cb:
+        return 'CB';
     }
+  }
 
-    return [
-      (
-        'PCD',
-        wheel.pcd != null && car.pcd != null && wheel.pcd == car.pcd
-            ? 'Atitinka'
-            : 'Nesutampa',
-        wheel.pcd != null && car.pcd != null && wheel.pcd == car.pcd ? ok : bad,
-      ),
-      (
-        'CB',
-        wheel.cb == null || car.cb == null
-            ? 'Nežinoma'
-            : wheel.cb! < car.cb!
-            ? 'Per maža'
-            : wheel.cb! > car.cb!
-            ? 'Didesnė (gali reikėti žiedų)'
-            : 'Atitinka',
-        wheel.cb == null || car.cb == null
-            ? neutral
-            : wheel.cb! < car.cb!
-            ? bad
-            : wheel.cb! > car.cb!
-            ? warn
-            : ok,
-      ),
-      (
-        'ET',
-        compareRange(wheel.et, car.etMin, car.etMax),
-        compareRange(wheel.et, car.etMin, car.etMax) == 'Atitinka'
-            ? ok
-            : compareRange(wheel.et, car.etMin, car.etMax) == 'Nežinoma'
-            ? neutral
-            : warn,
-      ),
-      (
-        'Plotis',
-        compareRange(wheel.widthJ, car.widthMinJ, car.widthMaxJ),
-        compareRange(wheel.widthJ, car.widthMinJ, car.widthMaxJ) == 'Atitinka'
-            ? ok
-            : compareRange(wheel.widthJ, car.widthMinJ, car.widthMaxJ) ==
-                  'Nežinoma'
-            ? neutral
-            : warn,
-      ),
-      (
-        'Diametras',
-        compareRange(wheel.diameterIn, car.diameterMinIn, car.diameterMaxIn),
-        compareRange(wheel.diameterIn, car.diameterMinIn, car.diameterMaxIn) ==
-                'Atitinka'
-            ? ok
-            : compareRange(
-                    wheel.diameterIn,
-                    car.diameterMinIn,
-                    car.diameterMaxIn,
-                  ) ==
-                  'Nežinoma'
-            ? neutral
-            : warn,
-      ),
-    ];
+  String _statusText(FitmentParameterStatus status) {
+    switch (status) {
+      case FitmentParameterStatus.ok:
+        return 'OK';
+      case FitmentParameterStatus.warning:
+        return 'Pastaba';
+      case FitmentParameterStatus.fail:
+        return 'Kritinis';
+    }
+  }
+
+  Color _statusColorByCheck(FitmentParameterStatus status) {
+    switch (status) {
+      case FitmentParameterStatus.ok:
+        return Colors.green;
+      case FitmentParameterStatus.warning:
+        return Colors.orange;
+      case FitmentParameterStatus.fail:
+        return Colors.red;
+    }
   }
 
   Color _statusColor(FitmentStatus status) {

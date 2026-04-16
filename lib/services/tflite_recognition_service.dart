@@ -34,12 +34,16 @@ class TfliteRecognitionService implements RecognitionService {
         imageFile,
         saveDebugImage: false,
       );
-      if (detectionRun.bestDetection != null) {
-        classifierInput = await cropper.cropDetectedWheel(
-          imageFile,
-          detectionRun.bestDetection!,
+      if (detectionRun.bestDetection == null) {
+        return RecognitionOutcome.failure(
+          reason: AppConstants.recognitionFailureMessage,
         );
       }
+
+      classifierInput = await cropper.cropDetectedWheel(
+        imageFile,
+        detectionRun.bestDetection!,
+      );
     } catch (_) {
       // Fall back to classifying the original image if detector step fails.
       classifierInput = imageFile;
@@ -62,16 +66,14 @@ class TfliteRecognitionService implements RecognitionService {
     }
 
     if (candidates.isEmpty) {
-      throw StateError(
-        'Modelis negrąžino tinkamų klasių iš lokalių duomenų bazės.',
+      return RecognitionOutcome.failure(
+        reason: AppConstants.recognitionFailureMessage,
       );
     }
 
     candidates.sort((a, b) => b.confidence.compareTo(a.confidence));
     final top5 = candidates.take(5).toList(growable: false);
 
-    final isConfident =
-        top5.first.confidence >= AppConstants.recognitionConfidenceThreshold;
-    return RecognitionOutcome(top5: top5, isConfident: isConfident);
+    return RecognitionOutcome(top5: top5);
   }
 }

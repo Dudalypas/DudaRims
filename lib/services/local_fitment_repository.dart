@@ -23,15 +23,33 @@ class LocalFitmentRepository {
     return decoded;
   }
 
+  List<WheelSpec> _mergeFinishOnlyDuplicates(List<WheelSpec> wheels) {
+    final grouped = <String, WheelSpec>{};
+
+    for (final wheel in wheels) {
+      final key = wheel.technicalKey;
+      final existing = grouped[key];
+      if (existing == null) {
+        grouped[key] = wheel;
+      } else {
+        grouped[key] = existing.mergeFinishOnly(wheel);
+      }
+    }
+
+    return grouped.values.toList(growable: false);
+  }
+
   Future<List<WheelSpec>> loadWheelSpecs() async {
     final raw = await rootBundle.loadString(_wheelsPath);
     final decoded = _decodeList(raw, 'wheels.json');
 
-    return decoded
+    final rawSpecs = decoded
         .whereType<Map<String, dynamic>>()
         .map(WheelSpec.fromJson)
         .where((w) => w.wheelClassName.trim().isNotEmpty)
         .toList(growable: false);
+
+    return _mergeFinishOnlyDuplicates(rawSpecs);
   }
 
   Future<List<VehicleFitment>> loadVehicleFitments() async {
@@ -50,7 +68,10 @@ class LocalFitmentRepository {
         .toList(growable: false);
   }
 
-  WheelSpec? findByPredictedClass(List<WheelSpec> wheelSpecs, String predictedLabel) {
+  WheelSpec? findByPredictedClass(
+    List<WheelSpec> wheelSpecs,
+    String predictedLabel,
+  ) {
     final target = predictedLabel.trim().toLowerCase();
     if (target.isEmpty) return null;
 

@@ -2,11 +2,14 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/constants/rim_thumbnail_assets.dart';
 import '../../core/theme/theme_tokens.dart';
 import '../../models/recognition_candidate.dart';
 import '../../models/recognition_outcome.dart';
 import '../rim/rim_details_screen.dart';
+
+enum RecognitionResultAction { retrySamePhoto, chooseAnotherPhoto }
 
 class RecognitionResultScreen extends StatelessWidget {
   final File imageFile;
@@ -20,7 +23,8 @@ class RecognitionResultScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final top = outcome.top1;
+    final top = outcome.top1OrNull;
+    final branch = outcome.branch;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Atpažinimo rezultatas')),
@@ -41,44 +45,34 @@ class RecognitionResultScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                outcome.isConfident
+                branch == RecognitionBranch.strong
                     ? 'Labiausiai panašus ratlankis'
-                    : 'Parink labiausiai panašų modelį',
+                    : branch == RecognitionBranch.candidates
+                    ? 'Parink labiausiai panašų modelį'
+                    : 'Nepavyko patikimai atpažinti ratlankio',
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
               ),
-              const SizedBox(height: 6),
-              Text(
-                outcome.isConfident
-                    ? 'Atpažinimo atitikimas: ${(top.confidence * 100).toStringAsFixed(1)}%'
-                    : 'Atpažinimo atitikimas žemesnis, pasirink vieną iš galimų variantų.',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.mutedText,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.panelSurface,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  'Tai tik ratlankio atpažinimo rezultatas. Suderinamumas su automobiliu bus tikrinamas kitame žingsnyje.',
+              if (branch != RecognitionBranch.strong) ...[
+                const SizedBox(height: 6),
+                Text(
+                  branch == RecognitionBranch.candidates
+                      ? 'Atpažinimo atitikimas žemesnis, pasirink vieną iš galimų variantų.'
+                      : (outcome.failureReason ??
+                            AppConstants.recognitionFailureMessage),
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.mutedText,
                   ),
                 ),
-              ),
+              ],
               const SizedBox(height: 14),
-              if (outcome.isConfident)
+              if (branch == RecognitionBranch.strong)
                 _HeroCandidateCard(
-                  candidate: top,
+                  candidate: top!,
                   onContinue: () => _openDetails(context, top.label),
                 )
-              else
+              else if (branch == RecognitionBranch.candidates)
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
@@ -98,26 +92,37 @@ class RecognitionResultScreen extends StatelessWidget {
                       ],
                     ],
                   ),
+                )
+              else
+                _FailureCard(
+                  onRetry: () => Navigator.of(
+                    context,
+                  ).pop(RecognitionResultAction.retrySamePhoto),
+                  onChooseAnother: () => Navigator.of(
+                    context,
+                  ).pop(RecognitionResultAction.chooseAnotherPhoto),
                 ),
-              const SizedBox(height: 16),
-              const Text(
-                'Top 5 kandidatai',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: outcome.top5
-                    .map(
-                      (c) => Chip(
-                        label: Text(
-                          '${c.label} • ${(c.confidence * 100).toStringAsFixed(0)}%',
+              if (branch != RecognitionBranch.failure) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Top 5 kandidatai',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: outcome.top5
+                      .map(
+                        (c) => Chip(
+                          label: Text(
+                            '${c.label} • ${(c.confidence * 100).toStringAsFixed(0)}%',
+                          ),
                         ),
-                      ),
-                    )
-                    .toList(growable: false),
-              ),
+                      )
+                      .toList(growable: false),
+                ),
+              ],
             ],
           ),
         ),
@@ -133,6 +138,37 @@ class RecognitionResultScreen extends StatelessWidget {
           selectedClassName: className,
         ),
       ),
+    );
+  }
+}
+
+class _FailureCard extends StatelessWidget {
+  final VoidCallback onRetry;
+  final VoidCallback onChooseAnother;
+
+  const _FailureCard({required this.onRetry, required this.onChooseAnother});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: onRetry,
+            child: const Text('Bandyti dar kartą'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            onPressed: onChooseAnother,
+            child: const Text('Pasirinkti kitą nuotrauką'),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -256,8 +292,11 @@ class _CandidateCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Atpažinimo atitikimas ${(candidate.confidence * 100).toStringAsFixed(1)}%',
-                  style: TextStyle(color: colors.mutedText),
+                  '${candidate.confidence * 100 >= 10 ? (candidate.confidence * 100).toStringAsFixed(0) : (candidate.confidence * 100).toStringAsFixed(1)}% atitikimas',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.mutedText,
+                    fontWeight: FontWeight.w500,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
