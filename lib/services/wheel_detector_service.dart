@@ -69,7 +69,8 @@ class WheelDetectorService {
     for (var y = 0; y < inputSize; y++) {
       for (var x = 0; x < inputSize; x++) {
         final px = prep.image.getPixel(x, y);
-        // Float detector models typically expect normalized 0..1 RGB.
+        // Detectoriui paduodam normalizuota RGB [0..1], nes taip eksportuotas modelis
+        // Jei ka sita irgi pakeisti reiks, jei modelis bus kitokiu inputu treniruotas
         input[offset++] = px.r / 255.0;
         input[offset++] = px.g / 255.0;
         input[offset++] = px.b / 255.0;
@@ -142,7 +143,7 @@ class WheelDetectorService {
     final out0 = output[0];
     final candidates = <DetectionResult>[];
 
-    // Supports [1,5,8400] and [1,8400,5].
+    // Sutinkam abu daznus layout'us: [1,5,N] ir [1,N,5].
     if (shape[1] == 5) {
       final count = shape[2];
       for (var i = 0; i < count; i++) {
@@ -206,7 +207,7 @@ class WheelDetectorService {
       return;
     }
 
-    // Some exports return normalized values [0..1], some return 640-space values.
+    // Dalis modeliu grazina [0..1], dalis iskart 640 koordinaciu erdveje
     final normalized =
         (cx.abs() <= 1.5 &&
         cy.abs() <= 1.5 &&
@@ -229,7 +230,7 @@ class WheelDetectorService {
     final x2Model = boxCx + boxW / 2.0;
     final y2Model = boxCy + boxH / 2.0;
 
-    // Reverse letterbox transform back to original-image coordinates.
+    // Atstatom is letterbox koordinaci atgal i originalios nuotraukos sistema
     var left = (x1Model - prep.padX) / prep.scale;
     var top = (y1Model - prep.padY) / prep.scale;
     var right = (x2Model - prep.padX) / prep.scale;

@@ -13,7 +13,7 @@ class MockRecognitionService implements RecognitionService {
 
   @override
   Future<RecognitionOutcome> analyze(File imageFile) async {
-    // Replace this mock with real ML inference output (top-5 labels + confidences).
+    // Mockas UI testams, jungikli pasidaryt reiktu
     final wheelSpecs = await repository.loadWheelSpecs();
     final classes = <String>{
       for (final spec in wheelSpecs)
@@ -37,15 +37,11 @@ class MockRecognitionService implements RecognitionService {
     for (var i = 0; i < picked.length; i++) {
       final scoreDrop = i * (top1High ? 0.09 : 0.06);
       final jitter = random.nextDouble() * 0.035;
-      final confidence = (baseTop - scoreDrop - jitter)
-          .clamp(0.05, 0.98)
-          .toDouble();
-      candidates.add(
-        RecognitionCandidate(label: picked[i], confidence: confidence),
-      );
+      final score = (baseTop - scoreDrop - jitter).clamp(0.05, 0.98).toDouble();
+      candidates.add(RecognitionCandidate(label: picked[i], score: score));
     }
 
-    candidates.sort((a, b) => b.confidence.compareTo(a.confidence));
+    candidates.sort((a, b) => b.score.compareTo(a.score));
     return RecognitionOutcome(top5: candidates);
   }
 }

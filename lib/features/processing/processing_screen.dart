@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../services/embedding_retrieval_recognition_service.dart';
 import '../../services/local_fitment_repository.dart';
 import '../../services/mock_recognition_service.dart';
 import '../../services/recognition_service.dart';
@@ -36,9 +37,30 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
   void initState() {
     super.initState();
     final repository = LocalFitmentRepository();
-    _service = AppConstants.enableRealMlInference
-        ? TfliteRecognitionService(repository: repository)
-        : MockRecognitionService(repository);
+    if (!AppConstants.enableRealMlInference) {
+      _service = MockRecognitionService(repository);
+      if (AppConstants.enablePipelineDebugLogs) {
+        debugPrint('[RecognitionRouting] Using mock recognition service.');
+      }
+    } else {
+      final classifierBaseline = TfliteRecognitionService(
+        repository: repository,
+      );
+      _service = switch (AppConstants.recognitionPipelineMode) {
+        RecognitionPipelineMode.embeddingRetrieval =>
+          EmbeddingRetrievalRecognitionService(
+            repository: repository,
+            fallbackService: classifierBaseline,
+          ),
+        RecognitionPipelineMode.classifierBaseline => classifierBaseline,
+      };
+      if (AppConstants.enablePipelineDebugLogs) {
+        debugPrint(
+          '[RecognitionRouting] mode=${AppConstants.recognitionPipelineMode} '
+          'fallbackEnabled=${AppConstants.enableClassifierFallback}',
+        );
+      }
+    }
     _timer = Timer.periodic(const Duration(milliseconds: 900), (_) {
       if (!mounted) return;
       setState(() {

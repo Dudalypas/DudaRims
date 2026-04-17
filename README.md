@@ -230,6 +230,140 @@ Every record keeps source attribution:
 
 This is designed so records can be safely consumed by a Flutter app or local JSON/SQLite store later.
 
+## Embedding Retrieval Pipeline (Thesis Alignment)
+
+This project now supports a retrieval-style recognition path:
+
+1. wheel detection
+2. post-detection crop refinement
+3. feature vector extraction (embedding)
+4. cosine-similarity search against local reference vectors
+5. top-k retrieval for candidate wheel classes
+6. fitment/compatibility logic remains unchanged
+
+### 1) Export embedding model from existing Keras classifier
+
+Uses the existing `best.keras` backbone and exposes the penultimate representation with L2 normalization.
+
+```powershell
+python xtools\export_embedding_model.py \
+	--source-model "assets\models\best.keras" \
+	--output "assets\models\wheel_embedding_cropped_float32.tflite"
+```
+
+Optional fp16 export:
+
+```powershell
+python xtools\export_embedding_model.py \
+	--source-model "assets\models\best.keras" \
+	--output "assets\models\wheel_embedding_cropped_float32.tflite" \
+	--export-fp16
+```
+
+### 2) Build reference vectors (TRAIN split only)
+
+Phase 2 uses multi-reference retrieval by default and keeps centroid as legacy baseline.
+
+Generate multi-reference JSON (limited references per class + optional centroid for baseline comparison):
+
+```powershell
+python xtools\generate_reference_embeddings.py \
+	--dataset-root "C:\Users\vilja\Desktop\Training_Mixed_V1" \
+	--split train \
+	--model "assets\models\wheel_embedding_cropped_float32.tflite" \
+	--output "assets\data\wheel_reference_embeddings.json" \
+	--reference-mode limited \
+	--max-refs-per-class 20 \
+	--sampling random \
+	--seed 42 \
+	--include-centroid
+```
+
+Other supported reference modes:
+
+- `--reference-mode all` (all train references per class)
+- `--reference-mode centroid` (legacy centroid-per-class baseline)
+
+Optional detector-based crop refinement during reference generation:
+
+```powershell
+python xtools\generate_reference_embeddings.py \
+	--dataset-root "C:\Users\vilja\Desktop\Training_Mixed_V1" \
+	--split train \
+	--model "assets\models\wheel_embedding_cropped_float32.tflite" \
+	--output "assets\data\wheel_reference_embeddings.json" \
+	--reference-mode limited \
+	--max-refs-per-class 20 \
+	--use-detector-crop \
+	--detector-model "assets\models\best_float16.tflite" \
+	--crop-padding-ratio 0.04 \
+	--crop-tighten-ratio 0.94 \
+	--crop-enforce-square \
+	--save-crops-dir "trained_cropped_classifier\crop_debug_refs"
+```
+
+### 3) Evaluate retrieval quality (Recall@1/3/5) with mode comparison
+
+Evaluates centroid baseline and multi-reference modes in one run, with optional crop-profile sweeps.
+
+```powershell
+python xtools\evaluate_retrieval.py \
+	--dataset-root "C:\Users\vilja\Desktop\Training_Mixed_V1" \
+	--model "assets\models\wheel_embedding_cropped_float32.tflite" \
+	--reference-json "assets\data\wheel_reference_embeddings.json" \
+	--splits val test \
+	--retrieval-modes centroid multi_max multi_topn_avg \
+	--topn-values 3 5 \
+	--crop-profiles "no_crop:false:0.04:0.94:true" "det_crop:true:0.04:0.94:true" \
+	--detector-model "assets\models\best_float16.tflite"
+```
+
+Quick smoke-check mode (fast):
+
+```powershell
+python xtools\evaluate_retrieval.py \
+	--dataset-root "C:\Users\vilja\Desktop\Training_Mixed_V1" \
+	--model "assets\models\wheel_embedding_cropped_float32.tflite" \
+	--reference-json "assets\data\wheel_reference_embeddings.json" \
+	--splits val \
+	--retrieval-modes centroid multi_max multi_topn_avg \
+	--topn-values 3 \
+	--crop-profiles "no_crop:false:0.04:0.94:true" \
+	--limit-per-class 1
+```
+
+Outputs:
+
+- `trained_cropped_classifier/retrieval_eval_summary.json`
+- `trained_cropped_classifier/retrieval_eval_per_class.csv`
+- `trained_cropped_classifier/retrieval_eval_experiments.csv`
+- `trained_cropped_classifier/retrieval_eval_top1_compare.csv`
+
+### 4) Save crop refinement examples for visual inspection
+
+```powershell
+python xtools\debug_refined_crops.py \
+	--input-root "C:\Users\vilja\Desktop\Training_Mixed_V1\val" \
+	--output-dir "trained_cropped_classifier\crop_debug" \
+	--detector-model "assets\models\best_float16.tflite" \
+	--per-class 8 \
+	--crop-padding-ratio 0.04 \
+	--crop-tighten-ratio 0.94 \
+	--crop-enforce-square
+```
+
+### Preprocessing Consistency (Training/Export/Inference)
+
+Current unified assumptions across export, reference generation, evaluation, and Flutter inference:
+
+- EXIF orientation is applied
+- RGB channel order is used
+- resize to `224x224`
+- `float32` input dtype
+- input pixel scale is `0..255` (no additional MobileNetV3 preprocessing layer)
+- output embedding is L2-normalized
+- retrieval similarity metric is cosine similarity
+
 ## Assumptions
 
 - Official pages may vary by region and language; parsing is heuristic and conservative.

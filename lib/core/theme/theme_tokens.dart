@@ -6,7 +6,7 @@ extension AppThemeTokens on ColorScheme {
   Color get panelSurfaceHigh => surfaceContainerHigh;
   Color get mutedText => onSurfaceVariant;
 
-  // Camera screen keeps an intentional dark overlay for contrast with preview.
+  // Sitas valdo ta tamsu overlapa, kad vel cardai neisplauktu
   Color get cameraOverlayStrong => shadow.withValues(alpha: 0.42);
   Color get cameraOverlaySoft => shadow.withValues(alpha: 0.34);
   Color get cameraControlFill => surface.withValues(alpha: 0.58);

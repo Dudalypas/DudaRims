@@ -1,9 +1,8 @@
 class RecognitionCandidate {
   final String label;
-  final double confidence;
+  final double score;
 
-  const RecognitionCandidate({
-    required this.label,
-    required this.confidence,
-  });
+  const RecognitionCandidate({required this.label, required this.score});
+
+  double get confidence => score;
 }

@@ -196,7 +196,7 @@ def parse_generation_header(header_text: str, brand: str, model: str, heading_id
     if year_from is None or year_to is None:
         return None
 
-    # Avoid selecting modification headings that start with a single year.
+    # Atmetam heading'us, kurie prasideda pavieniu metu, nes tai daznai ne generation pavadinimai.
     if MODIFICATION_HEADER_PATTERN.match(clean):
         return None
 

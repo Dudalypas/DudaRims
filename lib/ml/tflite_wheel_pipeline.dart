@@ -15,8 +15,8 @@ class TfliteWheelPipeline implements WheelPipeline {
 
   Interpreter? _interpreter;
   List<String>? _labels;
-  List<int>? _inputShape; // [1,224,224,3]
-  List<int>? _outputShape; // [1,21]
+  List<int>? _inputShape; // Tipiskai [1,224,224,3], bet imam dinamiskai is modelio.
+  List<int>? _outputShape; // Dažniausiai [1,numClasses].
   Future<void>? _loadFuture;
 
   TfliteWheelPipeline({
@@ -56,26 +56,28 @@ class TfliteWheelPipeline implements WheelPipeline {
     final inputShape = _inputShape!;
     final outputShape = _outputShape!;
 
-    // decode
+    // Pirma dekoduojam faila i image objekta
     final decoded = img.decodeImage(await imageFile.readAsBytes());
     if (decoded == null) throw Exception('Nepavyko dekoduoti paveikslėlio');
 
-    // resize params
+    // Imame target dydi is input tensoriaus, kad nereiktu hardcodinti 224
     final h = inputShape[1];
     final w = inputShape[2];
 
-    // center crop square -> resize
+    // Sutvarkom EXIF orientacija, nes kitaip dalis telefonu fotkiu ateina pasuktos
     final oriented = img.bakeOrientation(
       decoded,
-    ); // labai svarbu S23 fotkėms (EXIF)
+    );
+    // Resize darom tiesiai i modelio dydi
     final resized = img.copyResize(oriented, width: w, height: h);
 
-    // input tensor float32 [1,h,w,3] values 0..1
+    // Siame projekte modelis treniruotas su float32 RGB [0..255], tai papildomai nenormalizuojam
+    // Jei ka paskui pakeist modeli i toki, kuris treniruotas su [0..1] floatais, tai cia reikes padalinti is 255.0
     final input = Float32List(1 * h * w * 3);
     var i = 0;
     for (var y = 0; y < h; y++) {
       for (var x = 0; x < w; x++) {
-        final px = resized.getPixel(x, y); // Pixel
+        final px = resized.getPixel(x, y);
         input[i++] = px.r.toDouble();
         input[i++] = px.g.toDouble();
         input[i++] = px.b.toDouble();
@@ -83,7 +85,7 @@ class TfliteWheelPipeline implements WheelPipeline {
     }
     final inputTensor = input.reshape([1, h, w, 3]);
 
-    // output [1,numClasses]
+    // Is modelio gaunam logits [1,numClasses], tada rankinimui taikom softmax
     final numClasses = outputShape.last;
     final output = List.generate(1, (_) => List.filled(numClasses, 0.0));
 

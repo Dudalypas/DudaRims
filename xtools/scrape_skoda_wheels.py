@@ -198,7 +198,7 @@ def normalize_wheel_style_name(raw_name: str, source_url: str) -> str:
     text = re.sub(r"\s+", " ", text).strip(" -|_")
 
     if text:
-        # Keep final token group as style label for names like "Aluminium Rim 16 ILIAS".
+        # Jei pavadinimas triuksmingas, imam paskutini prasminga tokena(us) kaip style label.
         tokens = [tok for tok in re.split(r"\s+", text) if tok]
         if tokens:
             return " ".join(tokens[-2:]) if len(tokens) > 1 and tokens[-2].isalpha() and tokens[-1].isalpha() else tokens[-1]
@@ -352,7 +352,7 @@ def parse_product_page(url: str, html: str) -> dict[str, Any]:
     bolt_count = int(pcd.split("x", 1)[0]) if pcd else None
     cb = parse_float(find_value_after_label(lines, ("center bore", "centre bore", "cb", "dia")))
 
-    # Do not guess years from page text noise; only use explicit generation year ranges.
+    # Metu nespeliojam is laisvo teksto, imam tik aiskiai nurodyta generation range.
     year_from, year_to = extract_year_range(generation_text) if generation_text else (None, None)
     oem_code = extract_oem_code_from_page(soup, full_text)
 

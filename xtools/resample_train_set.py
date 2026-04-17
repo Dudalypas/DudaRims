@@ -113,7 +113,7 @@ def make_balanced_train_dir(
             suffix = src.suffix.lower()
 
             if idx <= original_count and src in files:
-                # Preserve obvious originals when possible.
+                # Kiek imanoma pirmiau dedam originalus, kad duplikatai nesumaisytu dataseto vaizdo.
                 dst_name = f"{class_name}_{idx:04d}{suffix}"
             else:
                 dst_name = f"{class_name}_{idx:04d}__dup{suffix}"

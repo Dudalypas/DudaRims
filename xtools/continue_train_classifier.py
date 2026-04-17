@@ -19,9 +19,9 @@ except Exception as exc:
 PROJECT_ROOT = Path(__file__).resolve().parent
 DATASET_ROOT = Path(r"C:\Users\vilja\Desktop\Training_split_cropped")
 
-# Requested base model identifier in this project is a TFLite export.
-# Fine-tuning cannot run from TFLite directly, so we verify this file exists
-# and then continue from its matching trainable Keras checkpoint.
+# Projektui svarbus bazinis artefaktas yra TFLite failas.
+# Is TFLite fine-tune'inti negalim, todel tik validuojam jo buvima
+# ir traininga tesiam nuo atitinkamo .keras checkpointo.
 BASE_TFLITE_PATH = PROJECT_ROOT / "trained_cropped_classifier" / "wheel_classifier_v4.tflite"
 BASE_KERAS_PATH = PROJECT_ROOT / "trained_cropped_classifier" / "best copy.keras"
 BASE_LABELS_PATH = PROJECT_ROOT / "trained_cropped_classifier" / "labels.txt"
@@ -427,7 +427,7 @@ def main() -> None:
             f"Expected trainable Keras model at: {base_keras}"
         )
 
-    # Strict class-order verification across dataset and labels.
+    # Cia labai svarbi klasiu tvarka: jei nesutampa su labels, mappingas bus neteisingas.
     dataset_class_names = discover_class_names(train_dir, val_dir, test_dir)
     labels = read_labels(base_labels)
 
@@ -444,7 +444,7 @@ def main() -> None:
 
     model = tf.keras.models.load_model(base_keras)
 
-    # Verify output dimension compatibility with class count.
+    # Papildomas saugiklis, kad modelio output dimension tikrai atitinka klasiu kieki.
     output_units = int(model.output_shape[-1])
     if output_units != len(dataset_class_names):
         raise RuntimeError(
@@ -452,7 +452,7 @@ def main() -> None:
             f"model_output_units={output_units}, expected={len(dataset_class_names)}"
         )
 
-    # Fine-tuning uses lower LR than initial training.
+    # Tesiant mokyma leidziam mazesni learning rate, kad neperrasytu jau ismoktu svoriu.
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=args.learning_rate),
         loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),

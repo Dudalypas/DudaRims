@@ -5,8 +5,7 @@ import XCTest
 class RunnerTests: XCTestCase {
 
   func testExample() {
-    // If you add code to the Runner application, consider adding tests here.
-    // See https://developer.apple.com/documentation/xctest for more information about using XCTest.
+    // Placeholder testas: kai atsiras macOS-specific logika, cia dedam realius XCTest patikrinimus.
   }
 
 }

@@ -31,10 +31,10 @@ class RecognitionOutcome {
       return RecognitionBranch.failure;
     }
 
-    if (candidate.confidence < AppConstants.recognitionLowConfidenceThreshold) {
+    if (candidate.score < AppConstants.recognitionLowSimilarityThreshold) {
       return RecognitionBranch.failure;
     }
-    if (candidate.confidence >= AppConstants.recognitionStrongThreshold) {
+    if (candidate.score >= AppConstants.recognitionStrongSimilarityThreshold) {
       return RecognitionBranch.strong;
     }
     return RecognitionBranch.candidates;

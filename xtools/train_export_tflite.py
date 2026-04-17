@@ -16,8 +16,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def cast_to_float32(image: tf.Tensor, label: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor]:
-    # IMPORTANT: MobileNetV3 default preprocessing in Keras expects float images in [0, 255].
-    # Do not scale to [0, 1] or [-1, 1] for this setup.
+    # MobileNetV3 siam setupui tikisi float [0..255], todel papildomo normalizavimo cia nedarom
     return tf.cast(image, tf.float32), label
 
 

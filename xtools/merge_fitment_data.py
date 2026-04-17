@@ -230,11 +230,11 @@ def merge_model_sources(models_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataF
         merged["year_from"] = exemplar.get("year_from")
         merged["year_to"] = exemplar.get("year_to")
 
-        # Prefer wheel-size for fitment ranges.
+        # Range laukams prioritetas wheel-size saltiniui.
         for field in ["diameter_min_in", "diameter_max_in", "width_min_j", "width_max_j", "et_min", "et_max"]:
             merged[field] = _pick_field_value(group, field, preferred_source="wheelsize")
 
-        # Prefer wheelfitment for hub and bolt specs.
+        # PCD/CB ir varztu info dazniau tikslesne is wheelfitment.
         for field in ["pcd", "cb", "center_bore_mm", "bolt_count", "thread_size"]:
             merged[field] = _pick_field_value(group, field, preferred_source="wheelfitment")
 

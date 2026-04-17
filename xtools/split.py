@@ -2,7 +2,7 @@ import os
 import shutil
 import random
 
-# CONFIG
+# Greita lokali split konfiguracija, keliai hardcodinti tho, gal persidaryt paskui
 SOURCE_DIR = "C:/Users/vilja/Desktop/Training/train"
 OUTPUT_DIR = "dataset_split"
 VAL_COUNT = 10

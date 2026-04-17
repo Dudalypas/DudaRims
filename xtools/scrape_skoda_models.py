@@ -358,7 +358,7 @@ def parse_tables_with_bs4(soup: BeautifulSoup) -> list[pd.DataFrame]:
         if not tr_nodes:
             return []
 
-        # Determine maximum logical column count considering colspans.
+        # Susiskaiciuojam realu max stulpeliu kieki, ivertinant colspan.
         max_cols = 0
         for tr in tr_nodes:
             logical_cols = 0
@@ -370,13 +370,13 @@ def parse_tables_with_bs4(soup: BeautifulSoup) -> list[pd.DataFrame]:
             return []
 
         grid: list[list[str]] = []
-        # col_idx -> (rows_left, value)
+        # col_idx -> (kiek_eiluciu_liko, reiksme)
         pending_rowspans: dict[int, tuple[int, str]] = {}
 
         for tr in tr_nodes:
             row_values = [""] * max_cols
 
-            # Apply pending rowspan values from previous rows.
+            # Pries skaitant naujas celes uzpildom reikšmes, kurios tesiasi per rowspan.
             for col_idx in range(max_cols):
                 if col_idx in pending_rowspans:
                     rows_left, value = pending_rowspans[col_idx]
@@ -483,7 +483,7 @@ def parse_wheelsize_ranges(soup: BeautifulSoup, source_page: str) -> dict[str, A
     parsed_tables = parse_tables_with_bs4(soup)
     LOGGER.info("Wheel-Size total HTML tables parsed for %s: %d", source_page, len(parsed_tables))
 
-    # Conservative dedupe: only treat tables as duplicates when full normalized parseable rim rows are identical.
+    # Dedupe darom konservatyviai: dubliu laikom tik tada, kai pilnos normalizuotos parse'inamos eilutes sutampa 1:1.
     seen_parseable_row_signatures: set[str] = set()
 
     for table_idx, df in enumerate(parsed_tables, start=1):
@@ -518,7 +518,7 @@ def parse_wheelsize_ranges(soup: BeautifulSoup, source_page: str) -> dict[str, A
             rim_text = normalize_text(row.get(rim_col, ""))
             w_rim, d_rim, et_rim = parse_rim_value(rim_text)
 
-            # Some Wheel-Size tables have an empty Rim column but still include rim spec in other cells.
+            # Kartais Rim stulpelis tuscias, bet specai buna kitose celese, tai bandom fallback parse per visa eilute.
             if d_rim is None and w_rim is None:
                 full_row_text = " ".join(normalize_text(v) for v in row.tolist() if normalize_text(v))
                 w_fb, d_fb, et_fb = parse_rim_value_fallback_from_row_text(full_row_text)
@@ -545,7 +545,7 @@ def parse_wheelsize_ranges(soup: BeautifulSoup, source_page: str) -> dict[str, A
                 et_min = et_rim
                 et_max = et_rim
 
-            # A row is rim-parsed only if both width and diameter are successfully parsed.
+            # Rim eilute laikom pilnai parse'inta tik kai turim ir width, ir diameter.
             rim_matched = w_rim is not None and d_rim is not None
             if rim_matched:
                 rim_regex_match_count += 1
@@ -694,7 +694,7 @@ def parse_wheelfitment_page(soup: BeautifulSoup, source_page: str) -> dict[str, 
     year_to = None
 
     if title:
-        # Example: Skoda Octavia (1997 - 2005) Wheel Fitment
+        # Pvz: Skoda Octavia (1997 - 2005) Wheel Fitment
         title_match = re.search(r"Skoda\s+([^\(]+)\((\d{4})\s*-\s*(\d{4})\)", title, flags=re.IGNORECASE)
         if title_match:
             model = title_match.group(1).strip()
@@ -703,7 +703,7 @@ def parse_wheelfitment_page(soup: BeautifulSoup, source_page: str) -> dict[str, 
 
     if model is None:
         path_text = unquote(urlparse(source_page).path)
-        # /car/Skoda/Octavia (1997 - 2005).html
+        # Fallback i URL kelia, pvz /car/Skoda/Octavia (1997 - 2005).html
         path_match = re.search(r"/Skoda/([^/\(]+)\s*\((\d{4})\s*-\s*(\d{4})\)", path_text, flags=re.IGNORECASE)
         if path_match:
             model = path_match.group(1).strip()

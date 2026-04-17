@@ -476,7 +476,7 @@ def generate_cropped_dataset(source_root: Path, cropped_root: Path, detector: De
 
 
 def cast_to_float32(image: tf.Tensor, label: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor]:
-    # Keep classifier preprocessing aligned with existing project: float [0..255].
+    # Del suderinamumo su esamu modeliu laikom preprocess kaip projekte: float [0..255].
     return tf.cast(image, tf.float32), label
 
 

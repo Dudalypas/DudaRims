@@ -13,10 +13,10 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image, ImageOps
 
-# Fixed benchmark dataset root requested by user.
+# Lokalus benchmark setas, is kurio darau palyginimo testus
 BENCHMARK_ROOT = Path(r"C:\Users\vilja\Desktop\testing")
 
-# Reuse project assets so behavior matches app as closely as possible.
+# Naudojam tuos pacius assets kaip appse, kad rezultatai butu kuo arciau realaus flow.
 PROJECT_ROOT = Path(__file__).resolve().parent
 CLASSIFIER_MODEL_PATH = PROJECT_ROOT / "assets" / "models" / "wheel_classifier_cropped_best_float32_v2.tflite"
 DETECTOR_MODEL_PATH = PROJECT_ROOT / "assets" / "models" / "best_float16.tflite"
@@ -125,7 +125,7 @@ class ClassifierRunner:
         oriented = ImageOps.exif_transpose(image).convert("RGB")
         resized = oriented.resize((self.input_w, self.input_h), Image.Resampling.BILINEAR)
 
-        # Matches existing behavior: float32 RGB in [0,255], no extra normalization.
+        # Laikom ta pati preprocess kaip appse: float32 RGB [0..255], be papildomo scaling.
         inp = np.asarray(resized, dtype=np.float32)
         inp = np.expand_dims(inp, axis=0).astype(self.input_details["dtype"])
 
@@ -182,7 +182,7 @@ class DetectorRunner:
         pad_x = (self.input_size - resized_w) / 2.0
         pad_y = (self.input_size - resized_h) / 2.0
 
-        # Dart draws at rounded pixel position but keeps original fractional pads for reverse transform.
+        # Cia atkartotas Dart elgesys: piešiam su round(), bet reverse transformui paliekam float pad reikšmes.
         canvas.paste(resized, (round(pad_x), round(pad_y)))
         return canvas, scale, pad_x, pad_y
 
@@ -402,7 +402,7 @@ def crop_detected_wheel(image_path: Path, detection: DetectionResult, padding_ra
 
 
 def infer_true_label(image_path: Path, benchmark_root: Path) -> str:
-    # Ground-truth class is the first folder directly under benchmark root.
+    # Ground truth imam is pirmo aplanko po benchmark root.
     rel_parts = image_path.relative_to(benchmark_root).parts
     if len(rel_parts) < 2:
         return "<root>"
@@ -499,7 +499,7 @@ def run_benchmark() -> None:
             }
             rows.append(row)
 
-            # Optional failure groups: copy source image for quick visual inspection.
+            # Issiskaidom klaidas i atskirus aplankus, kad greiciau perziureti ranka.
             if not old_top1_correct:
                 safe_copy(image_path, OLD_WRONG_DIR)
             if not new_top1_correct:

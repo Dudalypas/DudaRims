@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 import '../core/constants/app_constants.dart';
 import '../ml/tflite_wheel_pipeline.dart';
@@ -26,6 +27,10 @@ class TfliteRecognitionService implements RecognitionService {
 
   @override
   Future<RecognitionOutcome> analyze(File imageFile) async {
+    if (AppConstants.enablePipelineDebugLogs) {
+      debugPrint('[ClassifierBaseline] Analyze started.');
+    }
+
     final wheelSpecs = await repository.loadWheelSpecs();
 
     File? classifierInput = imageFile;
@@ -45,7 +50,6 @@ class TfliteRecognitionService implements RecognitionService {
         detectionRun.bestDetection!,
       );
     } catch (_) {
-      // Fall back to classifying the original image if detector step fails.
       classifierInput = imageFile;
     }
 
@@ -62,7 +66,7 @@ class TfliteRecognitionService implements RecognitionService {
       final label = p.label.trim();
       if (label.isEmpty) continue;
       if (!allowedClasses.contains(label.toLowerCase())) continue;
-      candidates.add(RecognitionCandidate(label: label, confidence: p.score));
+      candidates.add(RecognitionCandidate(label: label, score: p.score));
     }
 
     if (candidates.isEmpty) {
@@ -71,7 +75,7 @@ class TfliteRecognitionService implements RecognitionService {
       );
     }
 
-    candidates.sort((a, b) => b.confidence.compareTo(a.confidence));
+    candidates.sort((a, b) => b.score.compareTo(a.score));
     final top5 = candidates.take(5).toList(growable: false);
 
     return RecognitionOutcome(top5: top5);

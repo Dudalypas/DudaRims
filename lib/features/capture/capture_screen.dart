@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/state/app_state.dart';
 import '../../core/theme/theme_tokens.dart';
+import '../../services/embedding_retrieval_recognition_service.dart';
 import '../../services/local_fitment_repository.dart';
 import '../../services/mock_recognition_service.dart';
 import '../../services/recognition_service.dart';
@@ -42,9 +43,35 @@ class _CaptureScreenState extends State<CaptureScreen> {
   void initState() {
     super.initState();
     final repository = LocalFitmentRepository();
-    _recognitionService = AppConstants.enableRealMlInference
-        ? TfliteRecognitionService(repository: repository)
-        : MockRecognitionService(repository);
+
+    if (!AppConstants.enableRealMlInference) {
+      _recognitionService = MockRecognitionService(repository);
+      if (AppConstants.enablePipelineDebugLogs) {
+        debugPrint(
+          '[RecognitionEntrypoint] CaptureScreen initialized with MockRecognitionService.',
+        );
+      }
+      return;
+    }
+
+    final classifierBaseline = TfliteRecognitionService(repository: repository);
+    _recognitionService = switch (AppConstants.recognitionPipelineMode) {
+      RecognitionPipelineMode.embeddingRetrieval =>
+        EmbeddingRetrievalRecognitionService(
+          repository: repository,
+          fallbackService: classifierBaseline,
+        ),
+      RecognitionPipelineMode.classifierBaseline => classifierBaseline,
+    };
+
+    if (AppConstants.enablePipelineDebugLogs) {
+      debugPrint(
+        '[RecognitionEntrypoint] CaptureScreen initialized with '
+        '${_recognitionService.runtimeType}. '
+        'routingMode=${AppConstants.recognitionPipelineMode} '
+        'fallbackEnabled=${AppConstants.enableClassifierFallback}',
+      );
+    }
   }
 
   Future<void> _pick(ImageSource source) async {
@@ -66,6 +93,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
     var keepTrying = true;
     while (keepTrying) {
       try {
+        if (AppConstants.enablePipelineDebugLogs) {
+          debugPrint(
+            '[RecognitionEntrypoint] Starting analyze with service=${_recognitionService.runtimeType}',
+          );
+        }
+
         final minTransition = Future<void>.delayed(
           const Duration(milliseconds: 520),
         );

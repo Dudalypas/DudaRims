@@ -116,7 +116,7 @@ class RecognitionResultScreen extends StatelessWidget {
                       .map(
                         (c) => Chip(
                           label: Text(
-                            '${c.label} • ${(c.confidence * 100).toStringAsFixed(0)}%',
+                            '${c.label} • ${(c.score * 100).toStringAsFixed(0)}%',
                           ),
                         ),
                       )
@@ -195,7 +195,7 @@ class _HeroCandidateCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Atpažinimo atitikimas ${(candidate.confidence * 100).toStringAsFixed(1)}%',
+              'Panašumo balas ${(candidate.score * 100).toStringAsFixed(1)}%',
               style: TextStyle(color: Theme.of(context).colorScheme.mutedText),
             ),
             const SizedBox(height: 14),
@@ -292,7 +292,7 @@ class _CandidateCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '${candidate.confidence * 100 >= 10 ? (candidate.confidence * 100).toStringAsFixed(0) : (candidate.confidence * 100).toStringAsFixed(1)}% atitikimas',
+                  '${candidate.score * 100 >= 10 ? (candidate.score * 100).toStringAsFixed(0) : (candidate.score * 100).toStringAsFixed(1)}% panašumas',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: colors.mutedText,
                     fontWeight: FontWeight.w500,
