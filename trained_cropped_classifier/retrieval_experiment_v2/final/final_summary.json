@@ -1,0 +1,64 @@
+{
+  "phase": "final_train_val_plus_test_eval",
+  "rules_respected": {
+    "test_not_used_for_cv_or_training": true,
+    "references_built_from_dev_only": true,
+    "app_runtime_assets_not_replaced": true
+  },
+  "settings": {
+    "img_size": 224,
+    "batch_size": 32,
+    "epochs": 32,
+    "seed": 42,
+    "internal_val_ratio": 0.1,
+    "embedding_dim": 256,
+    "learning_rate": 0.001,
+    "triplet_margin": 0.2,
+    "triplet_weight": 0.5,
+    "ce_weight": 1.0,
+    "dropout": 0.2,
+    "reference_mode": "limited",
+    "max_refs_per_class": 20,
+    "retrieval_mode": "centroid",
+    "topn": 1
+  },
+  "sizes": {
+    "dev_total": 5015,
+    "internal_train": 4513,
+    "internal_val": 502,
+    "test_total": 735
+  },
+  "keras_val_metrics": {
+    "embedding_loss": 0.35231274366378784,
+    "logits_loss": 0.7961441278457642,
+    "logits_top1": 0.8067728877067566,
+    "logits_top3": 0.9661354422569275,
+    "loss": 0.9880010485649109
+  },
+  "test_retrieval": {
+    "recall@1": 0.8231292517006803,
+    "recall@3": 0.9714285714285714,
+    "recall@5": 0.9931972789115646
+  },
+  "baseline": {
+    "val": {
+      "recall@1": 0.5007,
+      "recall@3": 0.8027,
+      "recall@5": 0.8912
+    },
+    "test": {
+      "recall@1": 0.5388,
+      "recall@3": 0.7891,
+      "recall@5": 0.883
+    }
+  },
+  "artifacts": {
+    "best_keras": "C:\\Users\\vilja\\flutter_bandymas\\trained_cropped_classifier\\retrieval_experiment_v2\\final\\best.keras",
+    "tflite_float32": "C:\\Users\\vilja\\flutter_bandymas\\trained_cropped_classifier\\retrieval_experiment_v2\\artifacts\\wheel_embedding_experiment_v2_float32.tflite",
+    "tflite_fp16": "C:\\Users\\vilja\\flutter_bandymas\\trained_cropped_classifier\\retrieval_experiment_v2\\artifacts\\wheel_embedding_experiment_v2_fp16.tflite",
+    "reference_json": "C:\\Users\\vilja\\flutter_bandymas\\trained_cropped_classifier\\retrieval_experiment_v2\\artifacts\\wheel_reference_embeddings_experiment_v2.json",
+    "test_per_class_metrics_csv": "C:\\Users\\vilja\\flutter_bandymas\\trained_cropped_classifier\\retrieval_experiment_v2\\final\\test_per_class_metrics.csv",
+    "test_top1_compare_csv": "C:\\Users\\vilja\\flutter_bandymas\\trained_cropped_classifier\\retrieval_experiment_v2\\final\\test_top1_compare.csv",
+    "baseline_comparison_csv": "C:\\Users\\vilja\\flutter_bandymas\\trained_cropped_classifier\\retrieval_experiment_v2\\final\\baseline_comparison_test.csv"
+  }
+}

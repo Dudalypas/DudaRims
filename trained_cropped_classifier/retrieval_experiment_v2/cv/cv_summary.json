@@ -1,0 +1,69 @@
+{
+  "top_ks": [
+    1,
+    3,
+    5
+  ],
+  "folds_csv": "trained_cropped_classifier/retrieval_experiment_v2/folds/dev_with_folds.csv",
+  "settings": {
+    "img_size": 224,
+    "batch_size": 32,
+    "epochs": 28,
+    "seed": 42,
+    "embedding_dim": 256,
+    "learning_rate": 0.001,
+    "triplet_margin": 0.2,
+    "triplet_weight": 0.5,
+    "ce_weight": 1.0,
+    "dropout": 0.2,
+    "reference_mode": "limited",
+    "max_refs_per_class": 20,
+    "retrieval_modes": [
+      "centroid",
+      "multi_max",
+      "multi_topn_avg"
+    ],
+    "topn": 3
+  },
+  "aggregate": [
+    {
+      "retrieval_mode": "centroid",
+      "topn": 1,
+      "folds": 5,
+      "mean_recall@1": 0.8363358147159049,
+      "std_recall@1": 0.00985386694335792,
+      "mean_recall@3": 0.9666966875535671,
+      "std_recall@3": 0.002087898384565219,
+      "mean_recall@5": 0.9878299802292618,
+      "std_recall@5": 0.00273212198244508
+    },
+    {
+      "retrieval_mode": "multi_max",
+      "topn": 1,
+      "folds": 5,
+      "mean_recall@1": 0.7912989780220022,
+      "std_recall@1": 0.016668576268968477,
+      "mean_recall@3": 0.957116055208593,
+      "std_recall@3": 0.004965586685473303,
+      "mean_recall@5": 0.9848290312492332,
+      "std_recall@5": 0.0032090653726287587
+    },
+    {
+      "retrieval_mode": "multi_topn_avg",
+      "topn": 3,
+      "folds": 5,
+      "mean_recall@1": 0.8299389481384349,
+      "std_recall@1": 0.013084424704816291,
+      "mean_recall@3": 0.964505851410614,
+      "std_recall@3": 0.004882947085626119,
+      "mean_recall@5": 0.9880223844206633,
+      "std_recall@5": 0.0026773937606884993
+    }
+  ],
+  "baseline_val": {
+    "recall@1": 0.5007,
+    "recall@3": 0.8027,
+    "recall@5": 0.8912
+  },
+  "baseline_comparison_csv": "C:\\Users\\vilja\\flutter_bandymas\\trained_cropped_classifier\\retrieval_experiment_v2\\cv\\cv_baseline_comparison.csv"
+}
