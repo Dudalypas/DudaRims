@@ -48,6 +48,12 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
     if (AppConstants.enablePipelineDebugLogs) {
       debugPrint('[EmbeddingRetrieval] Analyze started.');
       debugPrint('[EmbeddingRetrieval] Active assets: model=${embeddingPipeline.modelAsset} refs=${embeddingPipeline.referenceEmbeddingsAsset} mode=${embeddingPipeline.referenceMode}');
+      debugPrint(
+        '[EmbeddingRetrieval] Ellipse mask enabled=${AppConstants.enableRetrievalEllipseMask} '
+        'inset=${AppConstants.retrievalEllipseMaskInsetRatio.toStringAsFixed(3)} '
+        'feather=${AppConstants.retrievalEllipseMaskFeather.toStringAsFixed(3)} '
+        'circleFallback=${AppConstants.retrievalEllipseMaskUseCircleFallback}',
+      );
     }
 
     final wheelSpecs = await repository.loadWheelSpecs();
@@ -68,8 +74,10 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
     final orientedSource = img.bakeOrientation(sourceImage);
 
     File retrievalInput = imageFile;
+    final tempFilesToDelete = <File>[];
     try {
       bool useCenteredRimOnlyFallback = false;
+      bool usedMaskedCropPath = false;
       try {
         final detectionRun = await detector.detectBest(
           imageFile,
@@ -81,7 +89,9 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
               '[EmbeddingRetrieval][reject] reason=detector_no_box',
             );
           }
-          useCenteredRimOnlyFallback = true;
+          return RecognitionOutcome.failure(
+            reason: AppConstants.recognitionNoRimDetectedMessage,
+          );
         }
 
         final detection = detectionRun.bestDetection;
@@ -144,12 +154,18 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
             }
             useCenteredRimOnlyFallback = true;
           } else {
-            retrievalInput = await cropper.cropDetectedWheel(
+            final refinedCrop = await cropper.cropDetectedWheel(
               imageFile,
               detection,
             );
             if (AppConstants.enablePipelineDebugLogs) {
               debugPrint('[EmbeddingRetrieval] Crop refinement completed.');
+            }
+            final processed = await _applyOptionalEllipseMask(refinedCrop);
+            retrievalInput = processed.file;
+            usedMaskedCropPath = processed.usedMask;
+            if (processed.file.path != refinedCrop.path) {
+              tempFilesToDelete.add(processed.file);
             }
           }
         }
@@ -160,7 +176,9 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
           );
           debugPrint('$st');
         }
-        useCenteredRimOnlyFallback = true;
+        return RecognitionOutcome.failure(
+          reason: AppConstants.recognitionNoRimDetectedMessage,
+        );
       }
 
       if (useCenteredRimOnlyFallback) {
@@ -206,33 +224,6 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
         );
       }
 
-      final top1Similarity = retrieved.first.cosineSimilarity;
-      if (top1Similarity < AppConstants.retrievalMinTop1Similarity) {
-        if (AppConstants.enablePipelineDebugLogs) {
-          debugPrint(
-            '[EmbeddingRetrieval][reject] reason=retrieval_similarity_too_low top1=${top1Similarity.toStringAsFixed(4)} min=${AppConstants.retrievalMinTop1Similarity.toStringAsFixed(4)}',
-          );
-        }
-        return RecognitionOutcome.failure(
-          reason: AppConstants.recognitionUncertainResultMessage,
-        );
-      }
-
-      if (retrieved.length >= 2) {
-        final top2Similarity = retrieved[1].cosineSimilarity;
-        final margin = top1Similarity - top2Similarity;
-        if (margin < AppConstants.retrievalMinTop1Top2Margin) {
-          if (AppConstants.enablePipelineDebugLogs) {
-            debugPrint(
-              '[EmbeddingRetrieval][reject] reason=retrieval_margin_too_small margin=${margin.toStringAsFixed(4)} min=${AppConstants.retrievalMinTop1Top2Margin.toStringAsFixed(4)}',
-            );
-          }
-          return RecognitionOutcome.failure(
-            reason: AppConstants.recognitionUncertainResultMessage,
-          );
-        }
-      }
-
       final candidates = <RecognitionCandidate>[];
       for (final r in retrieved) {
         final label = r.label.trim();
@@ -259,11 +250,51 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
       }
 
       candidates.sort((a, b) => b.score.compareTo(a.score));
+      final manualTop3 = candidates.take(3).toList(growable: false);
+
+      final top1Similarity = retrieved.first.cosineSimilarity;
+      if (top1Similarity < AppConstants.retrievalMinTop1Similarity) {
+        if (AppConstants.enablePipelineDebugLogs) {
+          final preview = manualTop3
+              .map((c) => '${c.label}:${c.score.toStringAsFixed(3)}')
+              .join(', ');
+          debugPrint(
+            '[EmbeddingRetrieval][manual_pick_low_confidence] top1=${top1Similarity.toStringAsFixed(4)} min=${AppConstants.retrievalMinTop1Similarity.toStringAsFixed(4)} top3=$preview',
+          );
+        }
+        return RecognitionOutcome.manualPick(
+          topCandidates: manualTop3,
+          reason: RecognitionManualPickReason.lowTop1Similarity,
+        );
+      }
+
+      if (retrieved.length >= 2) {
+        final top2Similarity = retrieved[1].cosineSimilarity;
+        final margin = top1Similarity - top2Similarity;
+        if (margin < AppConstants.retrievalMinTop1Top2Margin) {
+          if (AppConstants.enablePipelineDebugLogs) {
+            final preview = manualTop3
+                .map((c) => '${c.label}:${c.score.toStringAsFixed(3)}')
+                .join(', ');
+            debugPrint(
+              '[EmbeddingRetrieval][manual_pick_small_margin] margin=${margin.toStringAsFixed(4)} min=${AppConstants.retrievalMinTop1Top2Margin.toStringAsFixed(4)} top1=${top1Similarity.toStringAsFixed(4)} top2=${top2Similarity.toStringAsFixed(4)} top3=$preview',
+            );
+          }
+          return RecognitionOutcome.manualPick(
+            topCandidates: manualTop3,
+            reason: RecognitionManualPickReason.smallTop12Margin,
+          );
+        }
+      }
+
       if (AppConstants.enablePipelineDebugLogs) {
         debugPrint(
           '[EmbeddingRetrieval] Success via embedding path. top1=${candidates.first.label} '
           'score=${candidates.first.score.toStringAsFixed(4)}',
         );
+        if (usedMaskedCropPath) {
+          debugPrint('[EmbeddingRetrieval] Success via masked embedding path.');
+        }
       }
       return RecognitionOutcome(
         top5: candidates.take(5).toList(growable: false),
@@ -277,7 +308,87 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
         imageFile,
         AppConstants.recognitionFailureMessage,
       );
+    } finally {
+      for (final file in tempFilesToDelete) {
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
     }
+  }
+
+  Future<_MaskingResult> _applyOptionalEllipseMask(File refinedCropFile) async {
+    if (!AppConstants.enableRetrievalEllipseMask) {
+      return _MaskingResult(file: refinedCropFile, usedMask: false);
+    }
+
+    final decoded = img.decodeImage(await refinedCropFile.readAsBytes());
+    if (decoded == null) {
+      return _MaskingResult(file: refinedCropFile, usedMask: false);
+    }
+
+    final oriented = img.bakeOrientation(decoded);
+    final width = oriented.width;
+    final height = oriented.height;
+    if (AppConstants.enablePipelineDebugLogs) {
+      debugPrint('[EmbeddingRetrieval] Crop size before masking: ${width}x$height');
+    }
+
+    final cx = (width - 1) / 2.0;
+    final cy = (height - 1) / 2.0;
+    final inset = AppConstants.retrievalEllipseMaskInsetRatio.clamp(0.0, 0.45);
+    final feather = AppConstants.retrievalEllipseMaskFeather.clamp(0.0, 0.4);
+
+    final rxBase = width * 0.5 * (1.0 - inset);
+    final ryBase = height * 0.5 * (1.0 - inset);
+    final useCircle = AppConstants.retrievalEllipseMaskUseCircleFallback;
+    final rx = useCircle ? math.min(rxBase, ryBase) : rxBase;
+    final ry = useCircle ? math.min(rxBase, ryBase) : ryBase;
+
+    final out = img.Image.from(oriented);
+    final inner = (1.0 - feather).clamp(0.0, 1.0);
+
+    for (var y = 0; y < height; y++) {
+      final ny = (y - cy) / (ry <= 1e-6 ? 1.0 : ry);
+      for (var x = 0; x < width; x++) {
+        final nx = (x - cx) / (rx <= 1e-6 ? 1.0 : rx);
+        final d = math.sqrt(nx * nx + ny * ny);
+
+        double keep;
+        if (d <= inner) {
+          keep = 1.0;
+        } else if (d >= 1.0) {
+          keep = 0.0;
+        } else {
+          final t = (d - inner) / math.max(1e-6, (1.0 - inner));
+          keep = 1.0 - t;
+        }
+
+        if (keep >= 0.999) continue;
+
+        final px = out.getPixel(x, y);
+        out.setPixelRgb(
+          x,
+          y,
+          (px.r * keep).round().clamp(0, 255),
+          (px.g * keep).round().clamp(0, 255),
+          (px.b * keep).round().clamp(0, 255),
+        );
+      }
+    }
+
+    final maskedFile = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}retrieval_masked_${DateTime.now().microsecondsSinceEpoch}.jpg',
+    );
+    await maskedFile.writeAsBytes(img.encodeJpg(out, quality: 95));
+
+    if (AppConstants.enablePipelineDebugLogs) {
+      debugPrint(
+        '[EmbeddingRetrieval] Masked crop path used. mode=${useCircle ? 'circle' : 'ellipse'}',
+      );
+    }
+
+    return _MaskingResult(file: maskedFile, usedMask: true);
   }
 
   Future<RecognitionOutcome?> _tryCenteredRimOnlyFallback({
@@ -443,4 +554,11 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
     }
     return RecognitionOutcome.failure(reason: reason);
   }
+}
+
+class _MaskingResult {
+  final File file;
+  final bool usedMask;
+
+  const _MaskingResult({required this.file, required this.usedMask});
 }

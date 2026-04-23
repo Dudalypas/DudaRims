@@ -1,7 +1,7 @@
 import os
 
 # Lokalus aplankas su klasemis, kurias pervadinam.
-root_dir = r"C:\Users\vilja\Desktop\Training\train"
+root_dir = r"C:\Users\vilja\Desktop\Wheel_Detection\weak"
 
 image_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff', '.webp', ".avif")
 

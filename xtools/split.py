@@ -3,10 +3,10 @@ import shutil
 import random
 
 # Greita lokali split konfiguracija, keliai hardcodinti tho, gal persidaryt paskui
-SOURCE_DIR = "C:/Users/vilja/Desktop/Training/train"
-OUTPUT_DIR = "dataset_split"
-VAL_COUNT = 10
-TEST_COUNT = 10
+SOURCE_DIR = r"C:\Users\vilja\Desktop\Training_Mixed_v2\train"
+OUTPUT_DIR = r"C:\Users\vilja\Desktop\PROD_TRAIN"
+VAL_COUNT = 20
+TEST_COUNT = 20
 SEED = 42
 
 random.seed(SEED)

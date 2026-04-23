@@ -29,7 +29,7 @@ class WheelDetectorService {
   Future<void>? _loadFuture;
 
   WheelDetectorService({
-    this.modelAsset = 'assets/models/best_float16.tflite',
+    this.modelAsset = 'assets/models/0421best_float16.tflite',
     this.inputSize = 640,
     this.confidenceThreshold = 0.25,
     this.nmsThreshold = 0.45,

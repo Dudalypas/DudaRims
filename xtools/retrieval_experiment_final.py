@@ -119,8 +119,24 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    dev_records = read_records_csv(Path(args.dev_csv))
-    test_records = read_records_csv(Path(args.test_csv))
+    dev_csv_path = Path(args.dev_csv)
+    test_csv_path = Path(args.test_csv)
+    if not dev_csv_path.exists() or not test_csv_path.exists():
+        missing = []
+        if not dev_csv_path.exists():
+            missing.append(str(dev_csv_path))
+        if not test_csv_path.exists():
+            missing.append(str(test_csv_path))
+        raise FileNotFoundError(
+            "Missing retrieval manifest CSV file(s): "
+            + ", ".join(missing)
+            + "\nRegenerate folds first, e.g.: "
+            + "python xtools/retrieval_experiment_build_folds.py "
+            + f"--output-dir \"{dev_csv_path.parent}\""
+        )
+
+    dev_records = read_records_csv(dev_csv_path)
+    test_records = read_records_csv(test_csv_path)
 
     dev_records = [ImageRecord(path=r.path, label=r.label, source_split=r.source_split) for r in dev_records]
     test_records = [ImageRecord(path=r.path, label=r.label, source_split=r.source_split) for r in test_records]

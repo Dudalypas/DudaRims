@@ -19,26 +19,26 @@
     "dropout": 0.2,
     "reference_mode": "limited",
     "max_refs_per_class": 20,
-    "retrieval_mode": "centroid",
-    "topn": 1
+    "retrieval_mode": "multi_topn_avg",
+    "topn": 3
   },
   "sizes": {
-    "dev_total": 5015,
-    "internal_train": 4513,
-    "internal_val": 502,
-    "test_total": 735
+    "dev_total": 3044,
+    "internal_train": 2737,
+    "internal_val": 307,
+    "test_total": 360
   },
   "keras_val_metrics": {
-    "embedding_loss": 0.35231274366378784,
-    "logits_loss": 0.7961441278457642,
-    "logits_top1": 0.8067728877067566,
-    "logits_top3": 0.9661354422569275,
-    "loss": 0.9880010485649109
+    "embedding_loss": 0.33772164583206177,
+    "logits_loss": 0.33304446935653687,
+    "logits_top1": 0.9446253776550293,
+    "logits_top3": 0.9869706630706787,
+    "loss": 0.516568660736084
   },
   "test_retrieval": {
-    "recall@1": 0.8231292517006803,
-    "recall@3": 0.9714285714285714,
-    "recall@5": 0.9931972789115646
+    "recall@1": 0.9277777777777778,
+    "recall@3": 0.9888888888888889,
+    "recall@5": 0.9916666666666667
   },
   "baseline": {
     "val": {

@@ -15,6 +15,8 @@ class AppConstants {
       'Nepavyko aptikti ratlankio nuotraukoje.';
   static const String recognitionUncertainResultMessage =
       'Nepavyko patikimai atpažinti ratlankio.';
+  static const String recognitionAmbiguousCandidatesMessage =
+      'Rasti keli labai panašūs variantai. Pasirinkite tiksliausią.';
 
   // Greitas jungiklis UI testams, kai false, galima testuoti flow be realaus ML
   static const bool enableRealMlInference = true;
@@ -40,30 +42,36 @@ class AppConstants {
       ClassAggregationMode.topNSimilarityAverage;
   static const int classAggregationTopN = 1;
 
- // Detector rejection thresholds.
-static const double detectorMinScoreThreshold = 0.60;       // buvo 0.65
-static const double detectorMinBboxAreaRatio = 0.010;       // buvo 0.015
-static const double detectorMaxBboxAreaRatio = 0.80;        // buvo 0.70
-static const double? detectorMaxAspectRatio = 3.0;          // buvo 2.5
-static const double detectorHardMinScoreThreshold = 0.35;   // buvo 0.45
-static const double detectorHardMinBboxAreaRatio = 0.003;   // buvo 0.005
-static const double detectorHardMaxAspectRatio = 5.0;       // buvo 4.0
+    // Detector rejection thresholds.
+    static const double detectorMinScoreThreshold = 0.60;
+    static const double detectorMinBboxAreaRatio = 0.0035;
+    static const double detectorMaxBboxAreaRatio = 1.00;
+    static const double detectorMaxAspectRatio = 3.0;
+    static const double detectorHardMinScoreThreshold = 0.35;
+    static const double detectorHardMinBboxAreaRatio = 0.002;
+    static const double detectorHardMaxAspectRatio = 5.0;
 
-// Controlled centered fallback for rim-only images.
-static const bool enableCenteredRimOnlyFallback = true;
-static const double rimOnlyFallbackCenteredCropRatio = 0.86;      // buvo 0.80
-static const double rimOnlyFallbackCenterEnergyMinRatio = 0.52;   // buvo 0.62
-static const double rimOnlyFallbackMinTop1Similarity = 0.78;      // buvo 0.86
-static const double rimOnlyFallbackMinTop1Top2Margin = 0.015;     // buvo 0.05
+    // Controlled centered fallback for rim-only images.
+    static const bool enableCenteredRimOnlyFallback = false;
+    static const double rimOnlyFallbackCenteredCropRatio = 0.86;
+    static const double rimOnlyFallbackCenterEnergyMinRatio = 0.52;
+    static const double rimOnlyFallbackMinTop1Similarity = 0.78;
+    static const double rimOnlyFallbackMinTop1Top2Margin = 0.015;
 
-// Retrieval rejection thresholds.
-static const double retrievalMinTop1Similarity = 0.58;            // buvo 0.60
-static const double retrievalMinTop1Top2Margin = 0.008;           // buvo 0.015
+    // Retrieval rejection thresholds.
+    static const double retrievalMinTop1Similarity = 0.56;
+    static const double retrievalMinTop1Top2Margin = 0.008;
 
-// Post-detection crop refinement knobs for retrieval pipeline.
-static const double retrievalCropPaddingRatio = 0.03;             // buvo 0.04
-static const double retrievalCropTightenRatio = 0.96;             // buvo 0.94
-static const bool retrievalCropEnforceSquare = true;
+    // Post-detection crop refinement knobs for retrieval pipeline.
+    static const double retrievalCropPaddingRatio = 0.08;
+    static const double retrievalCropTightenRatio = 1.00;
+    static const bool retrievalCropEnforceSquare = true;
+
+    // Optional post-crop mask before embedding inference.
+    static const bool enableRetrievalEllipseMask = true;
+    static const double retrievalEllipseMaskInsetRatio = 0.07;
+    static const double retrievalEllipseMaskFeather = 0.05;
+    static const bool retrievalEllipseMaskUseCircleFallback = false;
 
   // FitmentTolerancijos, virsijus rodome perspejima, bet ne kritini
   static const double fitmentDiameterWarningDeviationIn = 1.0;

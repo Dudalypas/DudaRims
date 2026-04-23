@@ -1,7 +1,7 @@
 import os
 
-DATASET_DIR = r"C:\Users\vilja\Desktop\Training_Mixed"
-SPLITS = ["train", "val", "test"]
+DATASET_DIR = r"C:\Users\vilja\Desktop\Training_Mixed_v2"
+SPLITS = ["train"]
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif", ".tiff", ".avif"}
 

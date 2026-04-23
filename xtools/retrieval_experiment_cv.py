@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--img-size", type=int, default=224)
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--epochs", type=int, default=28)
+    parser.add_argument("--epochs", type=int, default=32)
     parser.add_argument("--seed", type=int, default=42)
 
     parser.add_argument("--embedding-dim", type=int, default=256)

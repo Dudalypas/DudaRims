@@ -58,7 +58,7 @@ class RecognitionResultScreen extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   branch == RecognitionBranch.candidates
-                      ? 'Atpažinimo atitikimas žemesnis, pasirink vieną iš galimų variantų.'
+                      ? outcome.candidateHintMessage
                       : (outcome.failureReason ??
                             AppConstants.recognitionFailureMessage),
                   style: TextStyle(

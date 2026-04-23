@@ -14,7 +14,7 @@ from retrieval_experiment_core import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DATASET_ROOT = Path(r"C:\Users\vilja\Desktop\Training_Mixed_V1")
+DEFAULT_DATASET_ROOT = Path(r"C:\Users\vilja\Desktop\PROD_cropped")
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_experiment_v2" / "folds"
 
 
