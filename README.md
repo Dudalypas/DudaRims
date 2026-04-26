@@ -1,42 +1,49 @@
-# Skoda Wheel Ingestion And Fitment Pipeline
+# Skoda ratlankių atpažinimo ir suderinamumo pipeline
 
-This repository now includes a small Python ingestion project for bachelor thesis work on Skoda wheel recognition and compatibility checking.
+Šitas repozitorijos gabalas yra mano bakalauro darbo dalis. Idėja paprasta: iš skirtingų šaltinių susirinkti duomenis apie Skoda ratlankius, juos sutvarkyti į vieną normalų formatą, ir po to automatiškai patikrinti suderinamumą su automobilio modeliu.
 
-The ingestion pipeline builds two normalized datasets:
+Projektas turi 2 pagrindines kryptis:
 
-- `wheels.csv` + `wheels.json` from **official Skoda accessory pages** (primary)
-- `skoda_models.csv` + `skoda_models.json` from **TireWheelGuide generation-level parsing** (secondary)
+- duomenų surinkimas ir sujungimas (Python skriptai)
+- ratlankių atpažinimas pagal embedding + retrieval (ML dalis)
 
-It also generates:
+## Ką sugeneruoja pipeline
+
+Pagrindiniai failai:
+
+- `wheels.csv` ir `wheels.json` (ratlankiai)
+- `skoda_models.csv` ir `skoda_models.json` (modelių fitment ribos)
+
+Papildomi kontroliniai failai:
 
 - `wheel_class_mapping.csv`
 - `manual_review.csv`
 - `source_conflicts.csv`
 - `fitment_examples.json`
 
-## Source Hierarchy
+## Šaltinių prioritetas
 
-1. **Primary:** official Skoda accessory/catalog pages for wheel specs.
-2. **Secondary:** third-party fitment references for vehicle model fitment ranges.
+1. Pirminis šaltinis: oficialūs Skoda aksesuarų/katalogo puslapiai.
+2. Antrinis šaltinis: trečiųjų šalių fitment puslapiai (modelių riboms).
 
-Rules used by scripts:
+Svarbios taisyklės:
 
-- Third-party values are never silently treated as more authoritative than official values.
-- Missing or conflicting values are flagged for manual review.
-- No fabricated technical values: blank + review flag is preferred over guessing.
+- trečiosios šalies reikšmės nelaikomos automatiškai „teisingesnėmis“ už oficialias;
+- jei trūksta reikšmių arba jos konfliktuoja, įrašas žymimas rankinei peržiūrai;
+- niekas nėra „išgalvojama“: geriau palikti tuščią ir pažymėti peržiūrai.
 
-## Python Requirements
+## Reikalavimai
 
 - Python 3.11+
-- Packages: `requests`, `beautifulsoup4`, `pandas`
+- paketai: `requests`, `beautifulsoup4`, `pandas`
 
-Install dependencies:
+Įsidiegti priklausomybes:
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-## Files Added
+## Naudojami pagrindiniai skriptai
 
 - `scrape_skoda_wheels.py`
 - `scrape_skoda_models.py`
@@ -44,9 +51,9 @@ pip install -r requirements.txt
 - `merge_fitment_data.py`
 - `fitment_checker.py`
 
-## 1) Scrape Official Wheel Data
+## 1) Oficialių ratlankių duomenų surinkimas
 
-Run with official listing and/or direct product URLs.
+Paleidimas su sąrašo URL ir/arba konkrečių produktų URL:
 
 ```powershell
 python scrape_skoda_wheels.py \
@@ -56,37 +63,37 @@ python scrape_skoda_wheels.py \
 	--save-raw-html
 ```
 
-Output:
+Išėjimas:
 
 - `wheels.csv`
 - `wheels.json`
 - `wheel_class_mapping.csv`
 
-Notes:
+Pastabos:
 
-- Rim dimensions like `7.0J x 17 ET 49` are parsed into `width_j`, `diameter_in`, `et`.
-- `pcd`, `cb`, and `bolt_count` are left blank when not explicitly present.
-- `needs_manual_review=True` is set when critical fields are missing.
+- tokie matmenys kaip `7.0J x 17 ET 49` išskaidomi į `width_j`, `diameter_in`, `et`;
+- `pcd`, `cb`, `bolt_count` paliekami tušti, jei aiškiai nerasta;
+- kai trūksta kritinių laukų, nustatomas `needs_manual_review=True`.
 
-## 2) Scrape Skoda Model Fitment Specs (TireWheelGuide-first)
+## 2) Skoda modelių fitment duomenys iš TireWheelGuide
 
-Vehicle ingestion now has a dedicated TireWheelGuide scraper that aggregates all modification tables under each generation block and emits one final row per generation.
+Šitas skriptas eina per generacijos bloką, surenka visas modifikacijų lenteles ir padaro vieną galutinę eilutę vienai generacijai.
 
-Source page example:
+Pavyzdinis šaltinis:
 
 - `https://tirewheelguide.com/sizes/skoda/octavia/1996/`
 
-The scraper inspects all modification sections and all fitment tables in the generation block to compute:
+Skaičiuojamos ribos:
 
 - `diameter_min_in`, `diameter_max_in`
 - `width_min_j`, `width_max_j`
 - `et_min`, `et_max`
 
-It also extracts and normalizes:
+Taip pat normalizuojami:
 
 - `pcd`, `cb`, `thread_size`, `bolt_count`, `center_bore_mm`
 
-After scraping multiple URLs, rows are consolidated by generation key:
+Kai duodami keli URL, duomenys sujungiami pagal raktą:
 
 - `brand`
 - `model`
@@ -94,9 +101,9 @@ After scraping multiple URLs, rows are consolidated by generation key:
 - `year_from`
 - `year_to`
 
-This prevents duplicate generation rows when several year pages resolve to the same generation.
+Taip išvengiama dublikatų, kai skirtingi metų puslapiai rodo tą pačią generaciją.
 
-### Single URL mode
+### Vieno URL režimas
 
 ```powershell
 python scrape_tirewheelguide_models.py \
@@ -105,7 +112,7 @@ python scrape_tirewheelguide_models.py \
 	--verbose
 ```
 
-### Multiple URL mode
+### Kelių URL režimas
 
 ```powershell
 python scrape_tirewheelguide_models.py \
@@ -113,8 +120,9 @@ python scrape_tirewheelguide_models.py \
 	--source-url "https://tirewheelguide.com/sizes/skoda/octavia/2004/" \
 	--output-dir ".\fitment_data" \
 	--verbose
+```
 
-### Save raw HTML snapshots
+### Raw HTML išsaugojimas
 
 ```powershell
 python scrape_tirewheelguide_models.py \
@@ -124,17 +132,16 @@ python scrape_tirewheelguide_models.py \
 	--output-dir ".\fitment_data" \
 	--verbose
 ```
-```
 
-### CSV input mode (`--pairs-csv` or `--input-csv`)
+### CSV įvesties režimas (`--pairs-csv` arba `--input-csv`)
 
-CSV columns:
+CSV stulpeliai:
 
 - `brand`
 - `model`
 - `source_url`
 
-Example:
+Pavyzdys:
 
 ```csv
 brand,model,source_url
@@ -142,7 +149,7 @@ Skoda,Octavia,https://tirewheelguide.com/sizes/skoda/octavia/1996/
 Skoda,Octavia,https://tirewheelguide.com/sizes/skoda/octavia/2004/
 ```
 
-Run:
+Paleidimas:
 
 ```powershell
 python scrape_tirewheelguide_models.py \
@@ -151,22 +158,22 @@ python scrape_tirewheelguide_models.py \
 	--verbose
 ```
 
-Output:
+Išėjimas:
 
 - `skoda_models.csv`
 - `skoda_models.json`
 - `source_conflicts.csv`
 - `manual_review.csv`
 
-Notes:
+Pastabos:
 
-- No Playwright is used in this ingestion path.
-- No Wheel-Size/wheelfitment scraping is required for this workflow.
-- Missing critical fields are flagged for manual review instead of guessed.
-- Conflicting values inside one generation are resolved by most-common value and flagged in `notes`.
-- Duplicate generation rows across multiple source URLs are merged into one row with joined `source_page` and `merged_from_urls=<n>` in `notes`.
+- šiame kelyje nenaudojamas `Playwright`;
+- `Wheel-Size/wheelfitment` scraping čia nereikalingas;
+- trūkstami kritiniai laukai žymimi rankinei peržiūrai, o ne „atspėjami“;
+- konfliktai vienoje generacijoje sprendžiami pagal dažniausiai pasikartojančią reikšmę ir pažymimi `notes`;
+- pasikartojančios generacijos iš kelių URL sujungiamos į vieną eilutę, `notes` lauke pridedant `merged_from_urls=<n>`.
 
-## 3) Merge, Normalize, Validate, And Build Review Queue
+## 3) Sujungimas, normalizavimas ir validacija
 
 ```powershell
 python merge_fitment_data.py \
@@ -176,74 +183,74 @@ python merge_fitment_data.py \
 	--output-dir ".\fitment_data"
 ```
 
-Outputs refreshed and validated:
+Atnaujinami failai:
 
 - `wheels.csv` / `wheels.json`
 - `skoda_models.csv` / `skoda_models.json`
 - `manual_review.csv`
 - `source_conflicts.csv`
 
-Manual review rows are generated for:
+Į `manual_review.csv` patenka atvejai, kai yra:
 
-- conflicting ET values
-- conflicting model generations
-- missing PCD/CB/thread/width/diameter fields
-- ambiguous wheel-class mappings
+- konfliktuojančios ET reikšmės;
+- konfliktuojančios modelio generacijos;
+- trūksta PCD/CB/thread/width/diameter;
+- dviprasmiškas ratlankio klasės priskyrimas.
 
-## 4) Compatibility Checker
+## 4) Suderinamumo tikrinimas
 
-`fitment_checker.py` exposes:
+`fitment_checker.py` turi funkciją:
 
 ```python
 check_fitment(wheel: dict, vehicle: dict) -> dict
 ```
 
-Returned shape:
+Grąžinama struktūra:
 
 - `result`: `fits`, `caution`, `does_not_fit`
-- `reasons`: list of explanations
+- `reasons`: paaiškinimų sąrašas
 
-Decision rules:
+Sprendimo logika:
 
-- PCD mismatch => `does_not_fit`
-- wheel CB smaller than vehicle requirement => `does_not_fit`
-- wheel CB larger than vehicle => `caution` (hub-centric rings)
-- diameter outside allowed range => `does_not_fit`
-- width outside range => slight = `caution`, clear = `does_not_fit`
-- ET outside range => slight = `caution`, clear = `does_not_fit`
-- missing critical data => `caution` with explicit explanation
+- PCD nesutampa -> `does_not_fit`
+- ratlankio CB mažesnis nei automobilio reikalaujamas -> `does_not_fit`
+- ratlankio CB didesnis -> `caution` (gali reikėti centravimo žiedų)
+- diametras už leidžiamų ribų -> `does_not_fit`
+- plotis už ribų -> nedidelis nukrypimas `caution`, didesnis `does_not_fit`
+- ET už ribų -> nedidelis nukrypimas `caution`, didesnis `does_not_fit`
+- trūksta kritinių duomenų -> `caution` su aiškiu paaiškinimu
 
-Create quick example outputs:
+Greitas pavyzdžių generavimas:
 
 ```powershell
 python fitment_checker.py --wheels "wheels.csv" --models "skoda_models.csv" --output "fitment_examples.json" --limit 5
 ```
 
-## Provenance And Manual Review
+## Duomenų kilmė ir rankinė peržiūra
 
-Every record keeps source attribution:
+Kiekvienas įrašas turi kilmės laukus:
 
 - `source_type`
 - `source_page`
 - `extraction_confidence`
 - `needs_manual_review`
 
-This is designed so records can be safely consumed by a Flutter app or local JSON/SQLite store later.
+Tai leidžia saugiai naudoti duomenis Flutter programėlėje arba lokalioje JSON/SQLite saugykloje.
 
-## Embedding Retrieval Pipeline (Thesis Alignment)
+## Embedding + retrieval dalis (bakalaurui)
 
-This project now supports a retrieval-style recognition path:
+Atpažinimo eiga projekte:
 
-1. wheel detection
-2. post-detection crop refinement
-3. feature vector extraction (embedding)
-4. cosine-similarity search against local reference vectors
-5. top-k retrieval for candidate wheel classes
-6. fitment/compatibility logic remains unchanged
+1. ratlankio aptikimas
+2. crop patikslinimas po aptikimo
+3. požymių vektoriaus (embedding) išgavimas
+4. cosine similarity paieška tarp etaloninių vektorių
+5. top-k kandidatų grąžinimas
+6. fitment logika lieka ta pati
 
-### 1) Export embedding model from existing Keras classifier
+### 1) Embedding modelio eksportas iš esamo Keras klasifikatoriaus
 
-Uses the existing `best.keras` backbone and exposes the penultimate representation with L2 normalization.
+Naudojamas esamas `best.keras` backbone, paimamas priešpaskutinis sluoksnis su L2 normalizacija.
 
 ```powershell
 python xtools\export_embedding_model.py \
@@ -251,7 +258,7 @@ python xtools\export_embedding_model.py \
 	--output "assets\models\wheel_embedding_cropped_float32.tflite"
 ```
 
-Optional fp16 export:
+Pasirinktinis fp16 eksportas:
 
 ```powershell
 python xtools\export_embedding_model.py \
@@ -260,11 +267,11 @@ python xtools\export_embedding_model.py \
 	--export-fp16
 ```
 
-### 2) Build reference vectors (TRAIN split only)
+### 2) Etaloninių vektorių kūrimas (tik TRAIN daliai)
 
-Phase 2 uses multi-reference retrieval by default and keeps centroid as legacy baseline.
+2 fazėje numatytas multi-reference retrieval, o centroid paliktas kaip legacy baseline.
 
-Generate multi-reference JSON (limited references per class + optional centroid for baseline comparison):
+Multi-reference JSON generavimas:
 
 ```powershell
 python xtools\generate_reference_embeddings.py \
@@ -279,12 +286,12 @@ python xtools\generate_reference_embeddings.py \
 	--include-centroid
 ```
 
-Other supported reference modes:
+Kiti reference režimai:
 
-- `--reference-mode all` (all train references per class)
-- `--reference-mode centroid` (legacy centroid-per-class baseline)
+- `--reference-mode all` (visi train pavyzdžiai kiekvienai klasei)
+- `--reference-mode centroid` (legacy centroid bazė)
 
-Optional detector-based crop refinement during reference generation:
+Pasirinktinis detector crop per etalonų generavimą:
 
 ```powershell
 python xtools\generate_reference_embeddings.py \
@@ -302,9 +309,9 @@ python xtools\generate_reference_embeddings.py \
 	--save-crops-dir "trained_cropped_classifier\crop_debug_refs"
 ```
 
-### 3) Evaluate retrieval quality (Recall@1/3/5) with mode comparison
+### 3) Retrieval kokybės vertinimas (Recall@1/3/5)
 
-Evaluates centroid baseline and multi-reference modes in one run, with optional crop-profile sweeps.
+Vienu paleidimu palyginami centroid ir multi-reference režimai, su pasirinktiniais crop profiliais.
 
 ```powershell
 python xtools\evaluate_retrieval.py \
@@ -318,7 +325,7 @@ python xtools\evaluate_retrieval.py \
 	--detector-model "assets\models\best_float16.tflite"
 ```
 
-Quick smoke-check mode (fast):
+Greitas smoke test režimas:
 
 ```powershell
 python xtools\evaluate_retrieval.py \
@@ -332,14 +339,14 @@ python xtools\evaluate_retrieval.py \
 	--limit-per-class 1
 ```
 
-Outputs:
+Rezultatai:
 
 - `trained_cropped_classifier/retrieval_eval_summary.json`
 - `trained_cropped_classifier/retrieval_eval_per_class.csv`
 - `trained_cropped_classifier/retrieval_eval_experiments.csv`
 - `trained_cropped_classifier/retrieval_eval_top1_compare.csv`
 
-### 4) Save crop refinement examples for visual inspection
+### 4) Crop pavyzdžių išsaugojimas vizualiai peržiūrai
 
 ```powershell
 python xtools\debug_refined_crops.py \
@@ -352,26 +359,26 @@ python xtools\debug_refined_crops.py \
 	--crop-enforce-square
 ```
 
-### Preprocessing Consistency (Training/Export/Inference)
+### Preprocessing nuoseklumas (mokymas / eksportas / inferencija)
 
-Current unified assumptions across export, reference generation, evaluation, and Flutter inference:
+Dabartinės bendros prielaidos visame pipeline:
 
-- EXIF orientation is applied
-- RGB channel order is used
-- resize to `224x224`
-- `float32` input dtype
-- input pixel scale is `0..255` (no additional MobileNetV3 preprocessing layer)
-- output embedding is L2-normalized
-- retrieval similarity metric is cosine similarity
+- pritaikoma EXIF orientacija;
+- naudojama RGB kanalų tvarka;
+- resize į `224x224`;
+- įvesties tipas `float32`;
+- pikselių skalė `0..255` (be papildomo MobileNetV3 preprocessing sluoksnio);
+- embedding išėjimas yra L2-normalizuotas;
+- retrieval metrika: cosine similarity.
 
-## Assumptions
+## Prielaidos
 
-- Official pages may vary by region and language; parsing is heuristic and conservative.
-- Third-party fitment sites are used to bootstrap model specs only.
-- When parsers cannot confidently extract a value, they leave it blank and flag review.
+- oficialių puslapių struktūra gali skirtis pagal regioną ir kalbą, todėl parsing yra atsargus;
+- trečiųjų šalių fitment puslapiai naudojami modelių riboms užpildyti;
+- jei reikšmė neištraukiama patikimai, ji paliekama tuščia ir žymima peržiūrai.
 
-## Limitations
+## Ribotumai
 
-- Some websites load data dynamically; this implementation avoids Selenium by default.
-- HTML structures can change and require parser selector updates.
-- Wheel-class mapping confidence can remain ambiguous for style variants and generic classes (for example `Steel_Wheel`)
+- dalis puslapių kraunasi dinamiškai; pagal nutylėjimą čia vengiama Selenium;
+- pasikeitus HTML struktūrai gali tekti taisyti parserio selektorius;
+- `wheel_class_mapping` vietomis gali likti dviprasmiškas (ypač generic klasėms kaip `Steel_Wheel`).
