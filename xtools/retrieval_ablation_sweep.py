@@ -149,7 +149,7 @@ def parse_args() -> argparse.Namespace:
 
 def extract_cv_metrics(cv_summary_path: Path) -> dict[str, float | None]:
     """Extract centroid retrieval mode metrics from cv_summary.json."""
-    if not cv_summary_path.exists():
+    def none_metrics():
         return {
             "recall_at_1_mean": None,
             "recall_at_1_std": None,
@@ -158,6 +158,76 @@ def extract_cv_metrics(cv_summary_path: Path) -> dict[str, float | None]:
             "recall_at_5_mean": None,
             "recall_at_5_std": None,
         }
+
+    if not cv_summary_path.exists():
+        return none_metrics()
+
+    # Helper to map various column/key name variants to canonical keys
+    def pick_value(d: dict, candidates: list[str]) -> float | None:
+        for c in candidates:
+            if c in d and d[c] is not None:
+                try:
+                    return float(d[c])
+                except Exception:
+                    continue
+        return None
+
+    # Try JSON first
+    try:
+        payload = json.loads(cv_summary_path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = None
+
+    aggregate_candidates = []
+    if isinstance(payload, dict):
+        for key in ("aggregate", "aggregate_metrics", "cv_aggregate_metrics", "metrics"):
+            val = payload.get(key)
+            if isinstance(val, list):
+                aggregate_candidates = val
+                break
+
+    # Look for centroid row in JSON aggregate
+    if aggregate_candidates:
+        centroid_row = None
+        for r in aggregate_candidates:
+            try:
+                if str(r.get("retrieval_mode", "")).lower() == "centroid":
+                    centroid_row = r
+                    break
+            except Exception:
+                continue
+
+        if centroid_row:
+            return {
+                "recall_at_1_mean": pick_value(centroid_row, ["recall_at_1_mean", "mean_recall@1", "recall@1_mean", "mean_recall_1"]),
+                "recall_at_1_std": pick_value(centroid_row, ["recall_at_1_std", "std_recall@1", "recall@1_std", "std_recall_1"]),
+                "recall_at_3_mean": pick_value(centroid_row, ["recall_at_3_mean", "mean_recall@3", "recall@3_mean", "mean_recall_3"]),
+                "recall_at_3_std": pick_value(centroid_row, ["recall_at_3_std", "std_recall@3", "recall@3_std", "std_recall_3"]),
+                "recall_at_5_mean": pick_value(centroid_row, ["recall_at_5_mean", "mean_recall@5", "recall@5_mean", "mean_recall_5"]),
+                "recall_at_5_std": pick_value(centroid_row, ["recall_at_5_std", "std_recall@5", "recall@5_std", "std_recall_5"]),
+            }
+
+    # If JSON failed or centroid not found, try CSV fallback in same folder
+    csv_path = cv_summary_path.parent / "cv_aggregate_metrics.csv"
+    if csv_path.exists():
+        try:
+            with csv_path.open("r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if str((row.get("retrieval_mode") or "")).lower() == "centroid":
+                        return {
+                            "recall_at_1_mean": pick_value(row, ["recall_at_1_mean", "mean_recall@1", "recall@1_mean", "mean_recall_1"]),
+                            "recall_at_1_std": pick_value(row, ["recall_at_1_std", "std_recall@1", "recall@1_std", "std_recall_1"]),
+                            "recall_at_3_mean": pick_value(row, ["recall_at_3_mean", "mean_recall@3", "recall@3_mean", "mean_recall_3"]),
+                            "recall_at_3_std": pick_value(row, ["recall_at_3_std", "std_recall@3", "recall@3_std", "std_recall_3"]),
+                            "recall_at_5_mean": pick_value(row, ["recall_at_5_mean", "mean_recall@5", "recall@5_mean", "mean_recall_5"]),
+                            "recall_at_5_std": pick_value(row, ["recall_at_5_std", "std_recall@5", "recall@5_std", "std_recall_5"]),
+                        }
+        except Exception:
+            pass
+
+    # Give up gracefully
+    return none_metrics()
 
 
 def config_copy(base: dict[str, Any], **updates: Any) -> dict[str, Any]:
@@ -223,45 +293,10 @@ def existing_run_metrics(output_dir: Path) -> dict[str, float | None] | None:
         return None
 
     metrics = extract_cv_metrics(cv_summary_path)
+    # Require the three mean metrics to be present to consider this a valid existing run
     if metrics["recall_at_1_mean"] is None or metrics["recall_at_3_mean"] is None or metrics["recall_at_5_mean"] is None:
         return None
     return metrics
-
-    try:
-        payload = json.loads(cv_summary_path.read_text(encoding="utf-8"))
-    except Exception as e:
-        print(f"Error reading {cv_summary_path}: {e}")
-        return {
-            "recall_at_1_mean": None,
-            "recall_at_1_std": None,
-            "recall_at_3_mean": None,
-            "recall_at_3_std": None,
-            "recall_at_5_mean": None,
-            "recall_at_5_std": None,
-        }
-
-    # Extract metrics for centroid retrieval mode from aggregate section.
-    aggregate = payload.get("aggregate", [])
-    centroid_row = next((r for r in aggregate if r.get("retrieval_mode") == "centroid"), None)
-
-    if centroid_row:
-        return {
-            "recall_at_1_mean": float(centroid_row.get("mean_recall@1", 0.0)),
-            "recall_at_1_std": float(centroid_row.get("std_recall@1", 0.0)),
-            "recall_at_3_mean": float(centroid_row.get("mean_recall@3", 0.0)),
-            "recall_at_3_std": float(centroid_row.get("std_recall@3", 0.0)),
-            "recall_at_5_mean": float(centroid_row.get("mean_recall@5", 0.0)),
-            "recall_at_5_std": float(centroid_row.get("std_recall@5", 0.0)),
-        }
-    else:
-        return {
-            "recall_at_1_mean": None,
-            "recall_at_1_std": None,
-            "recall_at_3_mean": None,
-            "recall_at_3_std": None,
-            "recall_at_5_mean": None,
-            "recall_at_5_std": None,
-        }
 
 
 def run_cv_for_config(
@@ -735,21 +770,42 @@ def main() -> None:
 
         # Extract metrics
         cv_summary_path = config_output_dir / "cv_summary.json"
-        metrics = extract_cv_metrics(cv_summary_path) if success and not args.dry_run else {
-            "recall_at_1_mean": None,
-            "recall_at_1_std": None,
-            "recall_at_3_mean": None,
-            "recall_at_3_std": None,
-            "recall_at_5_mean": None,
-            "recall_at_5_std": None,
-        }
+        if success and not args.dry_run:
+            metrics = extract_cv_metrics(cv_summary_path)
+        else:
+            metrics = {
+                "recall_at_1_mean": None,
+                "recall_at_1_std": None,
+                "recall_at_3_mean": None,
+                "recall_at_3_std": None,
+                "recall_at_5_mean": None,
+                "recall_at_5_std": None,
+            }
+
+        # Debug print of extracted metrics (always safe)
+        print(f"Metrics extracted: {metrics}")
+
+        # If training reported success but we couldn't extract metrics, mark as failed but continue
+        if success and not args.dry_run:
+            if (
+                metrics["recall_at_1_mean"] is None
+                or metrics["recall_at_3_mean"] is None
+                or metrics["recall_at_5_mean"] is None
+            ):
+                msg = "metrics extraction failed"
+                print(f"Warning: {config['name']} completed but {msg}.")
+                success = False
+                if error_msg:
+                    error_msg = f"{error_msg}; {msg}"
+                else:
+                    error_msg = msg
 
         result = ExperimentResult(
             name=config["name"],
             description=config["description"],
             config=config,
             output_dir=config_output_dir,
-            cv_summary_path=cv_summary_path if success else None,
+            cv_summary_path=cv_summary_path if (success or cv_summary_path.exists()) else None,
             recall_at_1_mean=metrics.get("recall_at_1_mean"),
             recall_at_1_std=metrics.get("recall_at_1_std"),
             recall_at_3_mean=metrics.get("recall_at_3_mean"),
