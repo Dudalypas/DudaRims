@@ -20,12 +20,9 @@ import csv
 import json
 import subprocess
 import sys
-from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
-import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_EXPERIMENT_ROOT = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_ablation_v1"
@@ -130,6 +127,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset-root", type=str, default=str(DEFAULT_DATASET_ROOT))
     parser.add_argument("--output-dir", type=str, default=str(DEFAULT_EXPERIMENT_ROOT))
     parser.add_argument("--folds-csv", type=str, default=str(DEFAULT_FOLDS_CSV))
+    parser.add_argument("--folds", type=int, default=5, help="Number of unique fold ids to use in normal mode.")
     parser.add_argument("--epochs", type=int, default=32, help="Max training epochs for all runs (can be overridden with --quick)")
     parser.add_argument(
         "--quick",
@@ -138,6 +136,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--quick-epochs", type=int, default=2, help="Epochs for quick mode smoke test.")
     parser.add_argument("--quick-folds", type=int, default=2, help="Number of folds for quick mode (will pick first N folds).")
+    parser.add_argument(
+        "--timeout-hours",
+        type=float,
+        default=0.0,
+        help="Per-run timeout in hours. Use 0 for no timeout.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print commands but do not execute.")
     parser.add_argument("--skip-existing", action="store_true", help="Skip runs whose output dir already exists.")
     return parser.parse_args()
@@ -154,6 +158,74 @@ def extract_cv_metrics(cv_summary_path: Path) -> dict[str, float | None]:
             "recall_at_5_mean": None,
             "recall_at_5_std": None,
         }
+
+
+def config_copy(base: dict[str, Any], **updates: Any) -> dict[str, Any]:
+    copied = dict(base)
+    copied.update(updates)
+    return copied
+
+
+def build_configs(quick: bool, epochs: int, quick_epochs: int) -> list[dict[str, Any]]:
+    baseline = config_copy(BASELINE_CONFIG, epochs=quick_epochs if quick else epochs)
+    ablations = [config_copy(cfg, epochs=quick_epochs if quick else epochs) for cfg in ABLATION_CONFIGS]
+    if quick:
+        wanted = {"baseline", "embedding_dim_128", "learning_rate_3e4"}
+        return [baseline] + [cfg for cfg in ablations if cfg["name"] in wanted]
+    return [baseline] + ablations
+
+
+def read_fold_ids(folds_csv: Path) -> list[int]:
+    fold_ids: set[int] = set()
+    with folds_csv.open("r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            fold_text = (row.get("fold") or "").strip()
+            if not fold_text:
+                continue
+            fold_ids.add(int(fold_text))
+    return sorted(fold_ids)
+
+
+def limit_folds_csv(source_csv: Path, target_csv: Path, max_folds: int, dry_run: bool) -> Path:
+    """Create a filtered CSV containing only the first N unique fold ids."""
+    if max_folds <= 0:
+        raise ValueError("max_folds must be >= 1")
+
+    fold_ids = read_fold_ids(source_csv)
+    selected = fold_ids[:max_folds]
+    if not selected:
+        raise RuntimeError(f"No fold ids found in {source_csv}")
+
+    if dry_run:
+        print(f"[DRY-RUN] Would create filtered folds CSV with folds {selected}: {target_csv}")
+        return target_csv
+
+    target_csv.parent.mkdir(parents=True, exist_ok=True)
+    keep = set(selected)
+    with source_csv.open("r", encoding="utf-8") as src, target_csv.open("w", newline="", encoding="utf-8") as dst:
+        reader = csv.DictReader(src)
+        if reader.fieldnames is None:
+            raise RuntimeError(f"Missing CSV header in {source_csv}")
+        writer = csv.DictWriter(dst, fieldnames=reader.fieldnames)
+        writer.writeheader()
+        for row in reader:
+            fold_text = (row.get("fold") or "").strip()
+            if fold_text and int(fold_text) in keep:
+                writer.writerow(row)
+
+    return target_csv
+
+
+def existing_run_metrics(output_dir: Path) -> dict[str, float | None] | None:
+    cv_summary_path = output_dir / "cv_summary.json"
+    if not cv_summary_path.exists():
+        return None
+
+    metrics = extract_cv_metrics(cv_summary_path)
+    if metrics["recall_at_1_mean"] is None or metrics["recall_at_3_mean"] is None or metrics["recall_at_5_mean"] is None:
+        return None
+    return metrics
 
     try:
         payload = json.loads(cv_summary_path.read_text(encoding="utf-8"))
@@ -195,20 +267,22 @@ def extract_cv_metrics(cv_summary_path: Path) -> dict[str, float | None]:
 def run_cv_for_config(
     config: dict[str, Any],
     output_dir: Path,
-    folds_csv: str,
+    folds_csv: Path,
     cv_script: Path,
+    timeout_hours: float = 0.0,
     dry_run: bool = False,
 ) -> tuple[bool, str | None]:
     """
     Run retrieval_experiment_cv.py with the given config.
     Returns (success, error_msg).
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = [
         sys.executable,
         str(cv_script),
-        "--folds-csv", folds_csv,
+        "--folds-csv", str(folds_csv),
         "--output-dir", str(output_dir),
         "--img-size", str(config["img_size"]),
         "--batch-size", str(config["batch_size"]),
@@ -237,12 +311,14 @@ def run_cv_for_config(
     print(f"{'='*80}")
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=3600,  # 1 hour timeout
-        )
+        run_kwargs: dict[str, Any] = {
+            "capture_output": True,
+            "text": True,
+        }
+        if timeout_hours > 0:
+            run_kwargs["timeout"] = timeout_hours * 3600
+
+        result = subprocess.run(cmd, **run_kwargs)
         if result.returncode == 0:
             print(f"✓ {config['name']} completed successfully.")
             return True, None
@@ -591,19 +667,32 @@ def main() -> None:
         print(f"Error: Folds CSV not found: {args.folds_csv}")
         sys.exit(1)
 
-    # Select configs based on --quick flag
-    configs_to_run = QUICK_MODE_CONFIGS if args.quick else [BASELINE_CONFIG] + ABLATION_CONFIGS
+    # Select configs based on --quick flag without mutating global defaults.
+    configs_to_run = build_configs(quick=args.quick, epochs=args.epochs, quick_epochs=args.quick_epochs)
 
-    # Override epochs for quick mode
-    if args.quick:
-        for cfg in configs_to_run:
-            cfg["epochs"] = args.quick_epochs
+    fold_limit = args.quick_folds if args.quick else args.folds
+    if fold_limit <= 0:
+        raise ValueError("Fold limit must be >= 1")
+
+    available_folds = read_fold_ids(Path(args.folds_csv))
+    if not available_folds:
+        raise RuntimeError(f"No fold ids found in {args.folds_csv}")
+    fold_limit = min(fold_limit, len(available_folds))
+
+    active_folds_csv = limit_folds_csv(
+        source_csv=Path(args.folds_csv),
+        target_csv=output_root / "_tmp" / f"folds_first{fold_limit}.csv",
+        max_folds=fold_limit,
+        dry_run=args.dry_run,
+    )
 
     print(f"\n{'='*80}")
     print(f"Retrieval Ablation Experiment")
     print(f"{'='*80}")
     print(f"Output root: {output_root}")
     print(f"Configurations to run: {len(configs_to_run)}")
+    print(f"Fold limit: {fold_limit}")
+    print(f"Timeout hours: {args.timeout_hours}")
     print(f"Dry-run: {args.dry_run}")
     print(f"Quick mode: {args.quick}")
     print(f"{'='*80}\n")
@@ -614,22 +703,21 @@ def main() -> None:
         config_output_dir = output_root / config["name"]
 
         # Check if should skip
-        if args.skip_existing and config_output_dir.exists():
+        existing_metrics = existing_run_metrics(config_output_dir) if args.skip_existing and config_output_dir.exists() else None
+        if existing_metrics is not None:
             print(f"Skipping {config['name']} (output dir exists).")
-            cv_summary_path = config_output_dir / "cv_summary.json"
-            metrics = extract_cv_metrics(cv_summary_path)
             result = ExperimentResult(
                 name=config["name"],
                 description=config["description"],
                 config=config,
                 output_dir=config_output_dir,
-                cv_summary_path=cv_summary_path,
-                recall_at_1_mean=metrics.get("recall_at_1_mean"),
-                recall_at_1_std=metrics.get("recall_at_1_std"),
-                recall_at_3_mean=metrics.get("recall_at_3_mean"),
-                recall_at_3_std=metrics.get("recall_at_3_std"),
-                recall_at_5_mean=metrics.get("recall_at_5_mean"),
-                recall_at_5_std=metrics.get("recall_at_5_std"),
+                cv_summary_path=config_output_dir / "cv_summary.json",
+                recall_at_1_mean=existing_metrics.get("recall_at_1_mean"),
+                recall_at_1_std=existing_metrics.get("recall_at_1_std"),
+                recall_at_3_mean=existing_metrics.get("recall_at_3_mean"),
+                recall_at_3_std=existing_metrics.get("recall_at_3_std"),
+                recall_at_5_mean=existing_metrics.get("recall_at_5_mean"),
+                recall_at_5_std=existing_metrics.get("recall_at_5_std"),
                 success=True,
             )
             results.append(result)
@@ -639,14 +727,22 @@ def main() -> None:
         success, error_msg = run_cv_for_config(
             config=config,
             output_dir=config_output_dir,
-            folds_csv=args.folds_csv,
+            folds_csv=active_folds_csv,
             cv_script=cv_script,
+            timeout_hours=args.timeout_hours,
             dry_run=args.dry_run,
         )
 
         # Extract metrics
         cv_summary_path = config_output_dir / "cv_summary.json"
-        metrics = extract_cv_metrics(cv_summary_path)
+        metrics = extract_cv_metrics(cv_summary_path) if success and not args.dry_run else {
+            "recall_at_1_mean": None,
+            "recall_at_1_std": None,
+            "recall_at_3_mean": None,
+            "recall_at_3_std": None,
+            "recall_at_5_mean": None,
+            "recall_at_5_std": None,
+        }
 
         result = ExperimentResult(
             name=config["name"],
