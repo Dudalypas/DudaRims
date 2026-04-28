@@ -21,12 +21,11 @@ class AppConstants {
   // Greitas jungiklis UI testams, kai false, galima testuoti flow be realaus ML
   static const bool enableRealMlInference = true;
 
-  // Migration strategy: use embedding retrieval by default, keep classifier path as baseline.
   static const RecognitionPipelineMode recognitionPipelineMode =
       RecognitionPipelineMode.embeddingRetrieval;
 
-  // Fallback to classifier when embedding retrieval path fails or has no candidates.
-  static const bool enableClassifierFallback = true;
+  // Fallback classifieri
+  static const bool enableClassifierFallback = false;
   static const bool enablePipelineDebugLogs = true;
     static const bool enableOriginalImageEmbeddingFallbackForDebug = false;
 

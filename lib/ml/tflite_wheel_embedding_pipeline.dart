@@ -166,7 +166,7 @@ class TfliteWheelEmbeddingPipeline {
     for (var y = 0; y < h; y++) {
       for (var x = 0; x < w; x++) {
         final px = resized.getPixel(x, y);
-        // Match training/inference convention used by the current backbone: RGB float32 in [0..255].
+        // RGB float32 in [0..255].
         input[i++] = px.r.toDouble();
         input[i++] = px.g.toDouble();
         input[i++] = px.b.toDouble();

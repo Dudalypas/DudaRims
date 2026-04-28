@@ -228,7 +228,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    'Atpažink Skoda ratlankį',
+                    'Atpažink ratlankį',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),

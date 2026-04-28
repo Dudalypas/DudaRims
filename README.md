@@ -1,4 +1,4 @@
-# Skoda ratlankių atpažinimo ir suderinamumo pipeline
+# Ratlankių atpažinimo ir suderinamumo pipeline
 
 Šitas repozitorijos gabalas yra mano bakalauro darbo dalis. Idėja paprasta: iš skirtingų šaltinių susirinkti duomenis apie Skoda ratlankius, juos sutvarkyti į vieną normalų formatą, ir po to automatiškai patikrinti suderinamumą su automobilio modeliu.
 

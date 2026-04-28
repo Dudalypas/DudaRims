@@ -19,13 +19,13 @@ except Exception:
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".avif"}
 
-# Mirrors values in lib/services/wheel_detector_service.dart
+# Same kas ir lib/services/wheel_detector_service.dart
 APP_DEFAULT_DETECTOR_MODEL = Path("assets/models/0421best_float16.tflite")
 APP_DEFAULT_INPUT_SIZE = 640
 APP_DEFAULT_CONFIDENCE_THRESHOLD = 0.25
 APP_DEFAULT_NMS_THRESHOLD = 0.45
 
-# Mirrors values in lib/core/constants/app_constants.dart
+# Same kas ir lib/core/constants/app_constants.dart
 APP_DETECTOR_MIN_SCORE_THRESHOLD = 0.60
 APP_DETECTOR_MIN_BBOX_AREA_RATIO = 0.0035
 APP_DETECTOR_MAX_BBOX_AREA_RATIO = 1.00

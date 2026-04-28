@@ -436,9 +436,9 @@ class _RimDetailsScreenState extends State<RimDetailsScreen> {
   String _statusLabel(FitmentStatus status) {
     switch (status) {
       case FitmentStatus.compatible:
-        return 'Tinka';
+        return 'Suderinama';
       case FitmentStatus.caution:
-        return 'Tinka su pastabomis';
+        return 'Suderinama su pastabomis';
       case FitmentStatus.incompatible:
         return 'Nesuderinama';
     }
