@@ -8,7 +8,6 @@ import '../../services/embedding_retrieval_recognition_service.dart';
 import '../../services/local_fitment_repository.dart';
 import '../../services/mock_recognition_service.dart';
 import '../../services/recognition_service.dart';
-import '../../services/tflite_recognition_service.dart';
 import '../result/recognition_result_screen.dart';
 
 class ProcessingScreen extends StatefulWidget {
@@ -43,22 +42,9 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
         debugPrint('[RecognitionRouting] Using mock recognition service.');
       }
     } else {
-      final classifierBaseline = TfliteRecognitionService(
-        repository: repository,
-      );
-      _service = switch (AppConstants.recognitionPipelineMode) {
-        RecognitionPipelineMode.embeddingRetrieval =>
-          EmbeddingRetrievalRecognitionService(
-            repository: repository,
-            fallbackService: classifierBaseline,
-          ),
-        RecognitionPipelineMode.classifierBaseline => classifierBaseline,
-      };
+      _service = EmbeddingRetrievalRecognitionService(repository: repository);
       if (AppConstants.enablePipelineDebugLogs) {
-        debugPrint(
-          '[RecognitionRouting] mode=${AppConstants.recognitionPipelineMode} '
-          'fallbackEnabled=${AppConstants.enableClassifierFallback}',
-        );
+        debugPrint('[RecognitionRouting] runtimePipeline=embeddingRetrieval');
       }
     }
     _timer = Timer.periodic(const Duration(milliseconds: 900), (_) {

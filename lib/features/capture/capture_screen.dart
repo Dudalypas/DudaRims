@@ -10,7 +10,6 @@ import '../../services/embedding_retrieval_recognition_service.dart';
 import '../../services/local_fitment_repository.dart';
 import '../../services/mock_recognition_service.dart';
 import '../../services/recognition_service.dart';
-import '../../services/tflite_recognition_service.dart';
 import '../car/car_selection_screen.dart';
 import '../result/recognition_result_screen.dart';
 import '../settings/settings_screen.dart';
@@ -54,22 +53,15 @@ class _CaptureScreenState extends State<CaptureScreen> {
       return;
     }
 
-    final classifierBaseline = TfliteRecognitionService(repository: repository);
-    _recognitionService = switch (AppConstants.recognitionPipelineMode) {
-      RecognitionPipelineMode.embeddingRetrieval =>
-        EmbeddingRetrievalRecognitionService(
-          repository: repository,
-          fallbackService: classifierBaseline,
-        ),
-      RecognitionPipelineMode.classifierBaseline => classifierBaseline,
-    };
+    _recognitionService = EmbeddingRetrievalRecognitionService(
+      repository: repository,
+    );
 
     if (AppConstants.enablePipelineDebugLogs) {
       debugPrint(
         '[RecognitionEntrypoint] CaptureScreen initialized with '
         '${_recognitionService.runtimeType}. '
-        'routingMode=${AppConstants.recognitionPipelineMode} '
-        'fallbackEnabled=${AppConstants.enableClassifierFallback}',
+        'runtimePipeline=embeddingRetrieval',
       );
     }
   }

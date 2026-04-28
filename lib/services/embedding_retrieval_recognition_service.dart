@@ -12,19 +12,20 @@ import 'recognition_service.dart';
 import 'wheel_crop_service.dart';
 import 'wheel_detector_service.dart';
 
+// This app uses embedding retrieval for runtime recognition. Legacy classifier
+// fallback was removed from runtime to keep production pipeline deterministic
+// and thesis-aligned.
 class EmbeddingRetrievalRecognitionService implements RecognitionService {
   final LocalFitmentRepository repository;
   final WheelDetectorService detector;
   final WheelCropService cropper;
   final TfliteWheelEmbeddingPipeline embeddingPipeline;
-  final RecognitionService? fallbackService;
 
   EmbeddingRetrievalRecognitionService({
     required this.repository,
     WheelDetectorService? detector,
     WheelCropService? cropper,
     TfliteWheelEmbeddingPipeline? embeddingPipeline,
-    this.fallbackService,
   }) : detector = detector ?? WheelDetectorService(),
        cropper =
            cropper ??
@@ -94,79 +95,75 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
           );
         }
 
-        final detection = detectionRun.bestDetection;
-        if (detection != null) {
-          final boxWidth = detection.width;
-          final boxHeight = detection.height;
-          final imageArea =
-              (orientedSource.width * orientedSource.height).toDouble();
-          final boxArea = boxWidth * boxHeight;
-          final areaRatio = imageArea > 0 ? boxArea / imageArea : 0.0;
-          final longSide = boxWidth > boxHeight ? boxWidth : boxHeight;
-          final shortSide = boxWidth > boxHeight ? boxHeight : boxWidth;
-          final aspectRatio = shortSide > 0 ? longSide / shortSide : 0.0;
+        final detection = detectionRun.bestDetection!;
+        final boxWidth = detection.width;
+        final boxHeight = detection.height;
+        final imageArea = (orientedSource.width * orientedSource.height)
+          .toDouble();
+        final boxArea = boxWidth * boxHeight;
+        final areaRatio = imageArea > 0 ? boxArea / imageArea : 0.0;
+        final longSide = boxWidth > boxHeight ? boxWidth : boxHeight;
+        final shortSide = boxWidth > boxHeight ? boxHeight : boxWidth;
+        final aspectRatio = shortSide > 0 ? longSide / shortSide : 0.0;
 
-          final hardScoreReject =
-              detection.score < AppConstants.detectorHardMinScoreThreshold;
-          final hardTinyReject =
-              areaRatio < AppConstants.detectorHardMinBboxAreaRatio;
-          final hardAspectReject =
-              aspectRatio > AppConstants.detectorHardMaxAspectRatio;
+        final hardScoreReject =
+          detection.score < AppConstants.detectorHardMinScoreThreshold;
+        final hardTinyReject = areaRatio < AppConstants.detectorHardMinBboxAreaRatio;
+        final hardAspectReject =
+          aspectRatio > AppConstants.detectorHardMaxAspectRatio;
 
-          if (hardScoreReject || hardTinyReject || hardAspectReject) {
-            if (AppConstants.enablePipelineDebugLogs) {
-              if (hardScoreReject) {
-                debugPrint(
-                  '[EmbeddingRetrieval][reject] reason=detector_score_too_low score=${detection.score.toStringAsFixed(4)} min=${AppConstants.detectorHardMinScoreThreshold.toStringAsFixed(4)}',
-                );
-              } else {
-                debugPrint(
-                  '[EmbeddingRetrieval][reject] reason=detector_box_invalid areaRatio=${areaRatio.toStringAsFixed(4)} aspectRatio=${aspectRatio.toStringAsFixed(4)}',
-                );
-              }
+        if (hardScoreReject || hardTinyReject || hardAspectReject) {
+          if (AppConstants.enablePipelineDebugLogs) {
+            if (hardScoreReject) {
+              debugPrint(
+                '[EmbeddingRetrieval][reject] reason=detector_score_too_low score=${detection.score.toStringAsFixed(4)} min=${AppConstants.detectorHardMinScoreThreshold.toStringAsFixed(4)}',
+              );
+            } else {
+              debugPrint(
+                '[EmbeddingRetrieval][reject] reason=detector_box_invalid areaRatio=${areaRatio.toStringAsFixed(4)} aspectRatio=${aspectRatio.toStringAsFixed(4)}',
+              );
             }
-            return RecognitionOutcome.failure(
-              reason: AppConstants.recognitionNoRimDetectedMessage,
-            );
           }
+          return RecognitionOutcome.failure(
+            reason: AppConstants.recognitionNoRimDetectedMessage,
+          );
+        }
 
-          final borderlineScore =
-              detection.score < AppConstants.detectorMinScoreThreshold;
-          final borderlineArea =
-              areaRatio < AppConstants.detectorMinBboxAreaRatio ||
-              areaRatio > AppConstants.detectorMaxBboxAreaRatio;
-          final borderlineAspect =
-              AppConstants.detectorMaxAspectRatio != null &&
-              aspectRatio > AppConstants.detectorMaxAspectRatio!;
+        final borderlineScore =
+            detection.score < AppConstants.detectorMinScoreThreshold;
+        final borderlineArea =
+            areaRatio < AppConstants.detectorMinBboxAreaRatio ||
+            areaRatio > AppConstants.detectorMaxBboxAreaRatio;
+        final borderlineAspect =
+            aspectRatio > AppConstants.detectorMaxAspectRatio;
 
-          if (borderlineScore || borderlineArea || borderlineAspect) {
-            if (AppConstants.enablePipelineDebugLogs) {
-              if (borderlineScore) {
-                debugPrint(
-                  '[EmbeddingRetrieval][reject] reason=detector_score_too_low score=${detection.score.toStringAsFixed(4)} min=${AppConstants.detectorMinScoreThreshold.toStringAsFixed(4)}',
-                );
-              }
-              if (borderlineArea || borderlineAspect) {
-                debugPrint(
-                  '[EmbeddingRetrieval][reject] reason=detector_box_invalid areaRatio=${areaRatio.toStringAsFixed(4)} aspectRatio=${aspectRatio.toStringAsFixed(4)}',
-                );
-              }
+        if (borderlineScore || borderlineArea || borderlineAspect) {
+          if (AppConstants.enablePipelineDebugLogs) {
+            if (borderlineScore) {
+              debugPrint(
+                '[EmbeddingRetrieval][reject] reason=detector_score_too_low score=${detection.score.toStringAsFixed(4)} min=${AppConstants.detectorMinScoreThreshold.toStringAsFixed(4)}',
+              );
             }
-            useCenteredRimOnlyFallback = true;
-          } else {
-            final refinedCrop = await cropper.cropDetectedWheel(
-              imageFile,
-              detection,
-            );
-            if (AppConstants.enablePipelineDebugLogs) {
-              debugPrint('[EmbeddingRetrieval] Crop refinement completed.');
+            if (borderlineArea || borderlineAspect) {
+              debugPrint(
+                '[EmbeddingRetrieval][reject] reason=detector_box_invalid areaRatio=${areaRatio.toStringAsFixed(4)} aspectRatio=${aspectRatio.toStringAsFixed(4)}',
+              );
             }
-            final processed = await _applyOptionalEllipseMask(refinedCrop);
-            retrievalInput = processed.file;
-            usedMaskedCropPath = processed.usedMask;
-            if (processed.file.path != refinedCrop.path) {
-              tempFilesToDelete.add(processed.file);
-            }
+          }
+          useCenteredRimOnlyFallback = true;
+        } else {
+          final refinedCrop = await cropper.cropDetectedWheel(
+            imageFile,
+            detection,
+          );
+          if (AppConstants.enablePipelineDebugLogs) {
+            debugPrint('[EmbeddingRetrieval] Crop refinement completed.');
+          }
+          final processed = await _applyOptionalEllipseMask(refinedCrop);
+          retrievalInput = processed.file;
+          usedMaskedCropPath = processed.usedMask;
+          if (processed.file.path != refinedCrop.path) {
+            tempFilesToDelete.add(processed.file);
           }
         }
       } catch (e, st) {
@@ -304,9 +301,8 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
         debugPrint('[EmbeddingRetrieval] Exception in embedding path: $e');
         debugPrint('$st');
       }
-      return _fallbackOrFailure(
-        imageFile,
-        AppConstants.recognitionFailureMessage,
+      return RecognitionOutcome.failure(
+        reason: AppConstants.recognitionFailureMessage,
       );
     } finally {
       for (final file in tempFilesToDelete) {
@@ -531,29 +527,6 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
     return centerRatio >= AppConstants.rimOnlyFallbackCenterEnergyMinRatio;
   }
 
-  Future<RecognitionOutcome> _fallbackOrFailure(
-    File imageFile,
-    String reason,
-  ) async {
-    if (AppConstants.enableClassifierFallback && fallbackService != null) {
-      try {
-        if (AppConstants.enablePipelineDebugLogs) {
-          debugPrint('[EmbeddingRetrieval] Entering classifier fallback path.');
-        }
-        return await fallbackService!.analyze(imageFile);
-      } catch (e, st) {
-        if (AppConstants.enablePipelineDebugLogs) {
-          debugPrint('[EmbeddingRetrieval] Classifier fallback failed: $e');
-          debugPrint('$st');
-        }
-        return RecognitionOutcome.failure(reason: reason);
-      }
-    }
-    if (AppConstants.enablePipelineDebugLogs) {
-      debugPrint('[EmbeddingRetrieval] Fallback disabled, returning failure.');
-    }
-    return RecognitionOutcome.failure(reason: reason);
-  }
 }
 
 class _MaskingResult {

@@ -1,5 +1,3 @@
-enum RecognitionPipelineMode { embeddingRetrieval, classifierBaseline }
-
 enum RetrievalReferenceMode { multiReference, centroidBaseline }
 
 enum ClassAggregationMode { maxSimilarity, topNSimilarityAverage }
@@ -18,16 +16,10 @@ class AppConstants {
   static const String recognitionAmbiguousCandidatesMessage =
       'Rasti keli labai panašūs variantai. Pasirinkite tiksliausią.';
 
-  // Greitas jungiklis UI testams, kai false, galima testuoti flow be realaus ML
+    // Greitas jungiklis UI testams, kai false, galima testuoti flow be realaus ML
   static const bool enableRealMlInference = true;
 
-  static const RecognitionPipelineMode recognitionPipelineMode =
-      RecognitionPipelineMode.embeddingRetrieval;
-
-  // Fallback classifieri
-  static const bool enableClassifierFallback = false;
   static const bool enablePipelineDebugLogs = true;
-    static const bool enableOriginalImageEmbeddingFallbackForDebug = false;
 
   static const String embeddingModelAsset =
       'assets/models/wheel_embedding_experiment_v2_float32.tflite';
@@ -50,16 +42,16 @@ class AppConstants {
     static const double detectorHardMinBboxAreaRatio = 0.002;
     static const double detectorHardMaxAspectRatio = 5.0;
 
+    // Retrieval rejection thresholds.
+    static const double retrievalMinTop1Similarity = 0.56;
+    static const double retrievalMinTop1Top2Margin = 0.008;
+
     // Controlled centered fallback for rim-only images.
     static const bool enableCenteredRimOnlyFallback = false;
     static const double rimOnlyFallbackCenteredCropRatio = 0.86;
     static const double rimOnlyFallbackCenterEnergyMinRatio = 0.52;
     static const double rimOnlyFallbackMinTop1Similarity = 0.78;
     static const double rimOnlyFallbackMinTop1Top2Margin = 0.015;
-
-    // Retrieval rejection thresholds.
-    static const double retrievalMinTop1Similarity = 0.56;
-    static const double retrievalMinTop1Top2Margin = 0.008;
 
     // Post-detection crop refinement knobs for retrieval pipeline.
     static const double retrievalCropPaddingRatio = 0.08;

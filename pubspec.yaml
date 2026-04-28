@@ -26,8 +26,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    # Includes classifier models and detector model (best_float16.tflite).
-    - assets/models/
-    - assets/labels/
-    - assets/data/
+    - assets/models/0421best_float16.tflite
+    - assets/models/wheel_embedding_experiment_v2_float32.tflite
+    - assets/data/wheel_reference_embeddings_experiment_v2.json
+    - assets/data/fitment.sqlite3
     - assets/data/rim_thumbnails/
