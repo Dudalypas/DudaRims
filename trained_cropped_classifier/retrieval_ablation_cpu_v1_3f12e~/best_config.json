@@ -1,0 +1,36 @@
+{
+  "selected_config": "embedding_dim_512",
+  "justification": "Selected 'embedding_dim_512' based on: recall@1=0.8673\u00b10.0076, recall@3=0.9750\u00b10.0094. ",
+  "metrics": {
+    "recall@1": {
+      "mean": 0.8673151645899834,
+      "std": 0.007637170016780419
+    },
+    "recall@3": {
+      "mean": 0.9749768673724919,
+      "std": 0.009409099980849813
+    },
+    "recall@5": {
+      "mean": 0.9907591368596576,
+      "std": 0.003068527623881965
+    }
+  },
+  "config": {
+    "name": "embedding_dim_512",
+    "description": "Ablation: embedding_dim=512 (larger)",
+    "img_size": 224,
+    "batch_size": 32,
+    "epochs": 20,
+    "seed": 42,
+    "embedding_dim": 512,
+    "learning_rate": 0.001,
+    "triplet_margin": 0.2,
+    "triplet_weight": 0.5,
+    "ce_weight": 1.0,
+    "dropout": 0.2,
+    "reference_mode": "limited",
+    "max_refs_per_class": 20,
+    "retrieval_mode": "centroid",
+    "topn": 1
+  }
+}

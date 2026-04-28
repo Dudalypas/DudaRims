@@ -1,0 +1,22 @@
+{
+  "fold": 2,
+  "train_size": 1229,
+  "val_size": 610,
+  "keras_val": {
+    "embedding_loss": 0.40746480226516724,
+    "logits_loss": 0.7881284952163696,
+    "logits_top1": 0.8377048969268799,
+    "logits_top3": 0.9606557488441467,
+    "loss": 1.0324841737747192
+  },
+  "retrieval": [
+    {
+      "fold": 2,
+      "retrieval_mode": "centroid",
+      "topn": 1,
+      "recall@1": 0.860655737704918,
+      "recall@3": 0.9622950819672131,
+      "recall@5": 0.9852459016393442
+    }
+  ]
+}
