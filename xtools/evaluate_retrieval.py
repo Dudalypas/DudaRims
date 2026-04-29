@@ -10,6 +10,8 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image, ImageOps
 
+from retrieval_experiment_core import build_classification_metrics, save_json, write_csv
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATASET_ROOT = Path(r"C:\Users\vilja\Desktop\Training_Mixed_V1")
 DEFAULT_EMBEDDING_MODEL = PROJECT_ROOT / "assets" / "models" / "wheel_embedding_cropped_float32.tflite"
@@ -18,6 +20,9 @@ DEFAULT_REPORT_JSON = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_e
 DEFAULT_REPORT_CSV = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_eval_per_class.csv"
 DEFAULT_EXPERIMENT_CSV = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_eval_experiments.csv"
 DEFAULT_TOP1_COMPARE_CSV = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_eval_top1_compare.csv"
+DEFAULT_CLASSIFICATION_REPORT_CSV = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_eval_classification_report.csv"
+DEFAULT_CONFUSION_MATRIX_CSV = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_eval_confusion_matrix.csv"
+DEFAULT_TOP1_PREDICTIONS_CSV = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_eval_top1_predictions.csv"
 DEFAULT_DETECTOR_MODEL = PROJECT_ROOT / "assets" / "models" / "best_float16.tflite"
 
 SUPPORTED_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff"}
@@ -61,6 +66,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--report-csv", type=str, default=str(DEFAULT_REPORT_CSV))
     parser.add_argument("--experiments-csv", type=str, default=str(DEFAULT_EXPERIMENT_CSV))
     parser.add_argument("--top1-compare-csv", type=str, default=str(DEFAULT_TOP1_COMPARE_CSV))
+    parser.add_argument("--classification-report-csv", type=str, default=str(DEFAULT_CLASSIFICATION_REPORT_CSV))
+    parser.add_argument("--confusion-matrix-csv", type=str, default=str(DEFAULT_CONFUSION_MATRIX_CSV))
+    parser.add_argument("--top1-predictions-csv", type=str, default=str(DEFAULT_TOP1_PREDICTIONS_CSV))
     return parser.parse_args()
 
 
@@ -431,8 +439,10 @@ def evaluate_split(
     per_class = defaultdict(lambda: {"count": 0, **{f"r@{k}": 0 for k in TOP_KS}})
     top1_cmp = defaultdict(int)
     detector_failures = 0
+    prediction_rows: list[dict[str, object]] = []
+    top_k_capture = max(TOP_KS)
 
-    for image_path, true_label in samples:
+    for query_index, (image_path, true_label) in enumerate(samples):
         if crop_profile["use_detector_crop"]:
             with Image.open(image_path) as raw:
                 oriented = ImageOps.exif_transpose(raw).convert("RGB")
@@ -461,8 +471,25 @@ def evaluate_split(
 
         ranked_scores = score_labels(query, refs, retrieval_mode=retrieval_mode, topn=topn)
         ranked = [label for label, _ in ranked_scores]
+        top_k_labels = ranked[:top_k_capture]
+        top_k_scores = [float(score) for _, score in ranked_scores[:top_k_capture]]
+        top1_predicted_label = ranked[0] if ranked else ""
         if ranked:
             top1_cmp[(true_label, ranked[0])] += 1
+
+        prediction_rows.append(
+            {
+                "query_index": int(query_index),
+                "true_label": true_label,
+                "top1_predicted_label": top1_predicted_label,
+                "top_k_labels": json.dumps(top_k_labels, ensure_ascii=False),
+                "top_k_scores": json.dumps(top_k_scores),
+                "split": split_name,
+                "retrieval_mode": retrieval_mode,
+                "topn": topn,
+                "crop_profile": str(crop_profile["name"]),
+            }
+        )
 
         class_row = per_class[true_label]
         class_row["count"] += 1
@@ -490,6 +517,8 @@ def evaluate_split(
             }
         )
 
+    classification = build_classification_metrics(prediction_rows, labels=sorted(refs.keys()))
+
     return {
         "split": split_name,
         "num_samples": n,
@@ -500,6 +529,22 @@ def evaluate_split(
         **recall,
         "per_class": per_class_rows,
         "top1_compare": [{"true_label": t, "pred_label": p, "count": c} for (t, p), c in sorted(top1_cmp.items())],
+        "top1_predictions": prediction_rows,
+        "classification_report_rows": classification["classification_report_rows"],
+        "classification_metrics": classification["aggregate_metrics"],
+        "confusion_matrix_rows": [
+            {
+                "split": split_name,
+                "retrieval_mode": retrieval_mode,
+                "topn": topn,
+                "crop_profile": str(crop_profile["name"]),
+                "true_label": true_label,
+                "pred_label": pred_label,
+                "count": int(classification["confusion_matrix"][i, j]),
+            }
+            for i, true_label in enumerate(classification["labels"])
+            for j, pred_label in enumerate(classification["labels"])
+        ],
     }
 
 
@@ -532,6 +577,10 @@ def main() -> None:
     all_per_class_rows: list[dict[str, object]] = []
     experiment_rows: list[dict[str, object]] = []
     top1_compare_rows: list[dict[str, object]] = []
+    classification_report_rows: list[dict[str, object]] = []
+    confusion_matrix_rows: list[dict[str, object]] = []
+    top1_prediction_rows: list[dict[str, object]] = []
+    classification_metric_rows: list[dict[str, object]] = []
 
     for split in args.splits:
         split_dir = dataset_root / split
@@ -599,6 +648,35 @@ def main() -> None:
                                 **row,
                             }
                         )
+
+                    for row in report["top1_predictions"]:
+                        top1_prediction_rows.append(row)
+
+                    for row in report["classification_report_rows"]:
+                        classification_report_rows.append(
+                            {
+                                "split": split,
+                                "retrieval_mode": mode,
+                                "topn": topn,
+                                "crop_profile": profile_name,
+                                **row,
+                            }
+                        )
+
+                    for row in report["confusion_matrix_rows"]:
+                        confusion_matrix_rows.append(row)
+
+                    classification_metric_rows.append(
+                        {
+                            "split": split,
+                            "retrieval_mode": mode,
+                            "topn": topn,
+                            "crop_profile": profile_name,
+                            "num_samples": report["num_samples"],
+                            "detector_failures": report["detector_failures"],
+                            **report["classification_metrics"],
+                        }
+                    )
 
     summary = {
         "model": str(model_path),
@@ -678,10 +756,59 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(top1_compare_rows)
 
+    write_csv(
+        Path(args.classification_report_csv),
+        classification_report_rows,
+        fieldnames=["split", "retrieval_mode", "topn", "crop_profile", "label", "precision", "recall", "f1_score", "support"],
+    )
+    write_csv(
+        Path(args.confusion_matrix_csv),
+        confusion_matrix_rows,
+        fieldnames=["split", "retrieval_mode", "topn", "crop_profile", "true_label", "pred_label", "count"],
+    )
+    write_csv(
+        Path(args.top1_predictions_csv),
+        top1_prediction_rows,
+        fieldnames=["query_index", "true_label", "top1_predicted_label", "top_k_labels", "top_k_scores", "split", "retrieval_mode", "topn", "crop_profile"],
+    )
+    write_csv(
+        Path(args.report_csv).with_name("retrieval_eval_classification_metrics.csv"),
+        classification_metric_rows,
+        fieldnames=[
+            "split",
+            "retrieval_mode",
+            "topn",
+            "crop_profile",
+            "num_samples",
+            "detector_failures",
+            "macro_precision",
+            "macro_recall",
+            "macro_f1",
+            "weighted_precision",
+            "weighted_recall",
+            "weighted_f1",
+        ],
+    )
+
+    summary["classification_metrics"] = classification_metric_rows
+    summary["artifacts"] = {
+        "per_class_report_csv": str(report_csv),
+        "experiment_grid_csv": str(experiments_csv),
+        "top1_compare_csv": str(top1_compare_csv),
+        "classification_report_csv": str(Path(args.classification_report_csv)),
+        "confusion_matrix_csv": str(Path(args.confusion_matrix_csv)),
+        "top1_predictions_csv": str(Path(args.top1_predictions_csv)),
+        "classification_metrics_csv": str(Path(args.report_csv).with_name("retrieval_eval_classification_metrics.csv")),
+    }
+    report_json.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
     print("Saved summary:", report_json)
     print("Saved per-class report:", report_csv)
     print("Saved experiment grid:", experiments_csv)
     print("Saved top1 compare:", top1_compare_csv)
+    print("Saved classification report:", Path(args.classification_report_csv))
+    print("Saved confusion matrix:", Path(args.confusion_matrix_csv))
+    print("Saved top1 predictions:", Path(args.top1_predictions_csv))
 
 
 if __name__ == "__main__":

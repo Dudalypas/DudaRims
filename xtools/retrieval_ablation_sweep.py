@@ -112,6 +112,18 @@ class ExperimentResult:
     recall_at_3_std: float | None
     recall_at_5_mean: float | None
     recall_at_5_std: float | None
+    macro_precision_mean: float | None = None
+    macro_precision_std: float | None = None
+    macro_recall_mean: float | None = None
+    macro_recall_std: float | None = None
+    macro_f1_mean: float | None = None
+    macro_f1_std: float | None = None
+    weighted_precision_mean: float | None = None
+    weighted_precision_std: float | None = None
+    weighted_recall_mean: float | None = None
+    weighted_recall_std: float | None = None
+    weighted_f1_mean: float | None = None
+    weighted_f1_std: float | None = None
     success: bool
     error_msg: str | None = None
 
@@ -149,7 +161,8 @@ def parse_args() -> argparse.Namespace:
 
 def extract_cv_metrics(cv_summary_path: Path) -> dict[str, float | None]:
     """Extract centroid retrieval mode metrics from cv_summary.json."""
-    def none_metrics():
+
+    def none_metrics() -> dict[str, float | None]:
         return {
             "recall_at_1_mean": None,
             "recall_at_1_std": None,
@@ -157,13 +170,24 @@ def extract_cv_metrics(cv_summary_path: Path) -> dict[str, float | None]:
             "recall_at_3_std": None,
             "recall_at_5_mean": None,
             "recall_at_5_std": None,
+            "macro_precision_mean": None,
+            "macro_precision_std": None,
+            "macro_recall_mean": None,
+            "macro_recall_std": None,
+            "macro_f1_mean": None,
+            "macro_f1_std": None,
+            "weighted_precision_mean": None,
+            "weighted_precision_std": None,
+            "weighted_recall_mean": None,
+            "weighted_recall_std": None,
+            "weighted_f1_mean": None,
+            "weighted_f1_std": None,
         }
 
     if not cv_summary_path.exists():
         return none_metrics()
 
-    # Helper to map various column/key name variants to canonical keys
-    def pick_value(d: dict, candidates: list[str]) -> float | None:
+    def pick_value(d: dict[str, Any], candidates: list[str]) -> float | None:
         for c in candidates:
             if c in d and d[c] is not None:
                 try:
@@ -172,32 +196,24 @@ def extract_cv_metrics(cv_summary_path: Path) -> dict[str, float | None]:
                     continue
         return None
 
-    # Try JSON first
     try:
         payload = json.loads(cv_summary_path.read_text(encoding="utf-8"))
     except Exception:
         payload = None
 
-    aggregate_candidates = []
-    if isinstance(payload, dict):
-        for key in ("aggregate", "aggregate_metrics", "cv_aggregate_metrics", "metrics"):
-            val = payload.get(key)
-            if isinstance(val, list):
-                aggregate_candidates = val
-                break
-
-    # Look for centroid row in JSON aggregate
-    if aggregate_candidates:
+    def extract_from_rows(rows: list[Any], metric_prefix: str) -> dict[str, float | None] | None:
+        if not rows:
+            return None
         centroid_row = None
-        for r in aggregate_candidates:
-            try:
-                if str(r.get("retrieval_mode", "")).lower() == "centroid":
-                    centroid_row = r
-                    break
-            except Exception:
+        for r in rows:
+            if not isinstance(r, dict):
                 continue
-
-        if centroid_row:
+            if str(r.get("retrieval_mode", "")).lower() == "centroid":
+                centroid_row = r
+                break
+        if centroid_row is None:
+            return None
+        if metric_prefix == "recall":
             return {
                 "recall_at_1_mean": pick_value(centroid_row, ["recall_at_1_mean", "mean_recall@1", "recall@1_mean", "mean_recall_1"]),
                 "recall_at_1_std": pick_value(centroid_row, ["recall_at_1_std", "std_recall@1", "recall@1_std", "std_recall_1"]),
@@ -206,8 +222,42 @@ def extract_cv_metrics(cv_summary_path: Path) -> dict[str, float | None]:
                 "recall_at_5_mean": pick_value(centroid_row, ["recall_at_5_mean", "mean_recall@5", "recall@5_mean", "mean_recall_5"]),
                 "recall_at_5_std": pick_value(centroid_row, ["recall_at_5_std", "std_recall@5", "recall@5_std", "std_recall_5"]),
             }
+        return {
+            "macro_precision_mean": pick_value(centroid_row, ["macro_precision_mean", "precision_macro_mean", "macro_precision"]),
+            "macro_precision_std": pick_value(centroid_row, ["macro_precision_std", "precision_macro_std"]),
+            "macro_recall_mean": pick_value(centroid_row, ["macro_recall_mean", "macro_recall"]),
+            "macro_recall_std": pick_value(centroid_row, ["macro_recall_std"]),
+            "macro_f1_mean": pick_value(centroid_row, ["macro_f1_mean", "macro_f1"]),
+            "macro_f1_std": pick_value(centroid_row, ["macro_f1_std"]),
+            "weighted_precision_mean": pick_value(centroid_row, ["weighted_precision_mean", "weighted_precision"]),
+            "weighted_precision_std": pick_value(centroid_row, ["weighted_precision_std"]),
+            "weighted_recall_mean": pick_value(centroid_row, ["weighted_recall_mean", "weighted_recall"]),
+            "weighted_recall_std": pick_value(centroid_row, ["weighted_recall_std"]),
+            "weighted_f1_mean": pick_value(centroid_row, ["weighted_f1_mean", "weighted_f1"]),
+            "weighted_f1_std": pick_value(centroid_row, ["weighted_f1_std"]),
+        }
 
-    # If JSON failed or centroid not found, try CSV fallback in same folder
+    if isinstance(payload, dict):
+        recall_rows = None
+        for key in ("aggregate", "aggregate_metrics", "cv_aggregate_metrics", "metrics"):
+            val = payload.get(key)
+            if isinstance(val, list):
+                recall_rows = val
+                break
+        recall_metrics = extract_from_rows(recall_rows or [], "recall")
+        if recall_metrics is not None:
+            classification_rows = None
+            for key in ("classification_aggregate", "aggregate_classification_metrics", "classification_metrics"):
+                val = payload.get(key)
+                if isinstance(val, list):
+                    classification_rows = val
+                    break
+            classification_metrics = extract_from_rows(classification_rows or [], "classification")
+            if classification_metrics is None:
+                classification_metrics = none_metrics()
+            recall_metrics.update(classification_metrics)
+            return recall_metrics
+
     csv_path = cv_summary_path.parent / "cv_aggregate_metrics.csv"
     if csv_path.exists():
         try:
@@ -215,18 +265,44 @@ def extract_cv_metrics(cv_summary_path: Path) -> dict[str, float | None]:
                 reader = csv.DictReader(f)
                 for row in reader:
                     if str((row.get("retrieval_mode") or "")).lower() == "centroid":
-                        return {
-                            "recall_at_1_mean": pick_value(row, ["recall_at_1_mean", "mean_recall@1", "recall@1_mean", "mean_recall_1"]),
-                            "recall_at_1_std": pick_value(row, ["recall_at_1_std", "std_recall@1", "recall@1_std", "std_recall_1"]),
-                            "recall_at_3_mean": pick_value(row, ["recall_at_3_mean", "mean_recall@3", "recall@3_mean", "mean_recall_3"]),
-                            "recall_at_3_std": pick_value(row, ["recall_at_3_std", "std_recall@3", "recall@3_std", "std_recall_3"]),
-                            "recall_at_5_mean": pick_value(row, ["recall_at_5_mean", "mean_recall@5", "recall@5_mean", "mean_recall_5"]),
-                            "recall_at_5_std": pick_value(row, ["recall_at_5_std", "std_recall@5", "recall@5_std", "std_recall_5"]),
-                        }
+                        metrics = none_metrics()
+                        metrics.update(
+                            {
+                                "recall_at_1_mean": pick_value(row, ["recall_at_1_mean", "mean_recall@1", "recall@1_mean", "mean_recall_1"]),
+                                "recall_at_1_std": pick_value(row, ["recall_at_1_std", "std_recall@1", "recall@1_std", "std_recall_1"]),
+                                "recall_at_3_mean": pick_value(row, ["recall_at_3_mean", "mean_recall@3", "recall@3_mean", "mean_recall_3"]),
+                                "recall_at_3_std": pick_value(row, ["recall_at_3_std", "std_recall@3", "recall@3_std", "std_recall_3"]),
+                                "recall_at_5_mean": pick_value(row, ["recall_at_5_mean", "mean_recall@5", "recall@5_mean", "mean_recall_5"]),
+                                "recall_at_5_std": pick_value(row, ["recall_at_5_std", "std_recall@5", "recall@5_std", "std_recall_5"]),
+                            }
+                        )
+                        classification_path = cv_summary_path.parent / "aggregate_classification_metrics.csv"
+                        if classification_path.exists():
+                            with classification_path.open("r", encoding="utf-8") as cf:
+                                class_reader = csv.DictReader(cf)
+                                for class_row in class_reader:
+                                    if str((class_row.get("retrieval_mode") or "")).lower() == "centroid":
+                                        metrics.update(
+                                            {
+                                                "macro_precision_mean": pick_value(class_row, ["macro_precision_mean"]),
+                                                "macro_precision_std": pick_value(class_row, ["macro_precision_std"]),
+                                                "macro_recall_mean": pick_value(class_row, ["macro_recall_mean"]),
+                                                "macro_recall_std": pick_value(class_row, ["macro_recall_std"]),
+                                                "macro_f1_mean": pick_value(class_row, ["macro_f1_mean"]),
+                                                "macro_f1_std": pick_value(class_row, ["macro_f1_std"]),
+                                                "weighted_precision_mean": pick_value(class_row, ["weighted_precision_mean"]),
+                                                "weighted_precision_std": pick_value(class_row, ["weighted_precision_std"]),
+                                                "weighted_recall_mean": pick_value(class_row, ["weighted_recall_mean"]),
+                                                "weighted_recall_std": pick_value(class_row, ["weighted_recall_std"]),
+                                                "weighted_f1_mean": pick_value(class_row, ["weighted_f1_mean"]),
+                                                "weighted_f1_std": pick_value(class_row, ["weighted_f1_std"]),
+                                            }
+                                        )
+                                        break
+                        return metrics
         except Exception:
             pass
 
-    # Give up gracefully
     return none_metrics()
 
 
@@ -430,6 +506,18 @@ def write_results(
             "recall@3_std",
             "recall@5_mean",
             "recall@5_std",
+            "macro_precision_mean",
+            "macro_precision_std",
+            "macro_recall_mean",
+            "macro_recall_std",
+            "macro_f1_mean",
+            "macro_f1_std",
+            "weighted_precision_mean",
+            "weighted_precision_std",
+            "weighted_recall_mean",
+            "weighted_recall_std",
+            "weighted_f1_mean",
+            "weighted_f1_std",
             "error_msg",
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -451,6 +539,18 @@ def write_results(
                 "recall@3_std": r.recall_at_3_std,
                 "recall@5_mean": r.recall_at_5_mean,
                 "recall@5_std": r.recall_at_5_std,
+                "macro_precision_mean": r.macro_precision_mean,
+                "macro_precision_std": r.macro_precision_std,
+                "macro_recall_mean": r.macro_recall_mean,
+                "macro_recall_std": r.macro_recall_std,
+                "macro_f1_mean": r.macro_f1_mean,
+                "macro_f1_std": r.macro_f1_std,
+                "weighted_precision_mean": r.weighted_precision_mean,
+                "weighted_precision_std": r.weighted_precision_std,
+                "weighted_recall_mean": r.weighted_recall_mean,
+                "weighted_recall_std": r.weighted_recall_std,
+                "weighted_f1_mean": r.weighted_f1_mean,
+                "weighted_f1_std": r.weighted_f1_std,
                 "error_msg": r.error_msg or "",
             })
     print(f"Wrote ablation results to: {csv_path}")
@@ -470,6 +570,12 @@ def write_results(
                     "recall@1": {"mean": r.recall_at_1_mean, "std": r.recall_at_1_std},
                     "recall@3": {"mean": r.recall_at_3_mean, "std": r.recall_at_3_std},
                     "recall@5": {"mean": r.recall_at_5_mean, "std": r.recall_at_5_std},
+                    "macro_precision": {"mean": r.macro_precision_mean, "std": r.macro_precision_std},
+                    "macro_recall": {"mean": r.macro_recall_mean, "std": r.macro_recall_std},
+                    "macro_f1": {"mean": r.macro_f1_mean, "std": r.macro_f1_std},
+                    "weighted_precision": {"mean": r.weighted_precision_mean, "std": r.weighted_precision_std},
+                    "weighted_recall": {"mean": r.weighted_recall_mean, "std": r.weighted_recall_std},
+                    "weighted_f1": {"mean": r.weighted_f1_mean, "std": r.weighted_f1_std},
                 },
                 "error_msg": r.error_msg,
                 "cv_summary_path": str(r.cv_summary_path) if r.cv_summary_path else None,
@@ -491,6 +597,12 @@ def write_results(
                 "recall@1": {"mean": best_result.recall_at_1_mean, "std": best_result.recall_at_1_std},
                 "recall@3": {"mean": best_result.recall_at_3_mean, "std": best_result.recall_at_3_std},
                 "recall@5": {"mean": best_result.recall_at_5_mean, "std": best_result.recall_at_5_std},
+                "macro_precision": {"mean": best_result.macro_precision_mean, "std": best_result.macro_precision_std},
+                "macro_recall": {"mean": best_result.macro_recall_mean, "std": best_result.macro_recall_std},
+                "macro_f1": {"mean": best_result.macro_f1_mean, "std": best_result.macro_f1_std},
+                "weighted_precision": {"mean": best_result.weighted_precision_mean, "std": best_result.weighted_precision_std},
+                "weighted_recall": {"mean": best_result.weighted_recall_mean, "std": best_result.weighted_recall_std},
+                "weighted_f1": {"mean": best_result.weighted_f1_mean, "std": best_result.weighted_f1_std},
             },
             "config": best_result.config,
         }
@@ -620,6 +732,17 @@ Why:
 - They demonstrate due diligence in testing but are secondary to core embedding model choices.
 
 **Thesis statement:** "img_size ir batch_size pateikiami kaip ribota jautruminė analizė, nuo kurios tiesiogiai priklauso aparatinės įrangos apribojimai ir taikymo reikalavimai, o ne modelio reprezentacinė galia."
+
+### 3.6 Top-1 Classification Metrics for Retrieval Evaluation
+
+Kadangi retrieval pipeline vis dar grąžina kandidatų sąrašą, klasifikacinės metrikos skaičiuojamos tik pagal **top-1** prognozę.
+
+- **recall@k** atsako, ar teisinga klasė pateko į pirmus $k$ kandidatų sąrašą.
+- **precision** atsako, kiek dažnai prognozuota klasė iš tikrųjų yra teisinga.
+- **recall** atsako, kiek tikrų tam tikros klasės pavyzdžių buvo rasta.
+- **F1** balansuoja precision ir recall, todėl yra naudinga kai svarbu ir tikslumas, ir pilnumas.
+
+**Thesis statement:** "Top-k candidate retrieval vertinama naudojant recall@k, o klasifikacinės metrikos (precision, recall, F1 ir confusion matrix) skaičiuojamos tik pagal top-1 prognozuotą klasę. Tai leidžia atskirti kandidatų paieškos kokybę nuo galutinio klasifikavimo sprendimo kokybės."
 
 ## 4. Experimental Results
 
@@ -753,6 +876,18 @@ def main() -> None:
                 recall_at_3_std=existing_metrics.get("recall_at_3_std"),
                 recall_at_5_mean=existing_metrics.get("recall_at_5_mean"),
                 recall_at_5_std=existing_metrics.get("recall_at_5_std"),
+                macro_precision_mean=existing_metrics.get("macro_precision_mean"),
+                macro_precision_std=existing_metrics.get("macro_precision_std"),
+                macro_recall_mean=existing_metrics.get("macro_recall_mean"),
+                macro_recall_std=existing_metrics.get("macro_recall_std"),
+                macro_f1_mean=existing_metrics.get("macro_f1_mean"),
+                macro_f1_std=existing_metrics.get("macro_f1_std"),
+                weighted_precision_mean=existing_metrics.get("weighted_precision_mean"),
+                weighted_precision_std=existing_metrics.get("weighted_precision_std"),
+                weighted_recall_mean=existing_metrics.get("weighted_recall_mean"),
+                weighted_recall_std=existing_metrics.get("weighted_recall_std"),
+                weighted_f1_mean=existing_metrics.get("weighted_f1_mean"),
+                weighted_f1_std=existing_metrics.get("weighted_f1_std"),
                 success=True,
             )
             results.append(result)
@@ -780,6 +915,18 @@ def main() -> None:
                 "recall_at_3_std": None,
                 "recall_at_5_mean": None,
                 "recall_at_5_std": None,
+                "macro_precision_mean": None,
+                "macro_precision_std": None,
+                "macro_recall_mean": None,
+                "macro_recall_std": None,
+                "macro_f1_mean": None,
+                "macro_f1_std": None,
+                "weighted_precision_mean": None,
+                "weighted_precision_std": None,
+                "weighted_recall_mean": None,
+                "weighted_recall_std": None,
+                "weighted_f1_mean": None,
+                "weighted_f1_std": None,
             }
 
         # Debug print of extracted metrics (always safe)
@@ -812,6 +959,18 @@ def main() -> None:
             recall_at_3_std=metrics.get("recall_at_3_std"),
             recall_at_5_mean=metrics.get("recall_at_5_mean"),
             recall_at_5_std=metrics.get("recall_at_5_std"),
+            macro_precision_mean=metrics.get("macro_precision_mean"),
+            macro_precision_std=metrics.get("macro_precision_std"),
+            macro_recall_mean=metrics.get("macro_recall_mean"),
+            macro_recall_std=metrics.get("macro_recall_std"),
+            macro_f1_mean=metrics.get("macro_f1_mean"),
+            macro_f1_std=metrics.get("macro_f1_std"),
+            weighted_precision_mean=metrics.get("weighted_precision_mean"),
+            weighted_precision_std=metrics.get("weighted_precision_std"),
+            weighted_recall_mean=metrics.get("weighted_recall_mean"),
+            weighted_recall_std=metrics.get("weighted_recall_std"),
+            weighted_f1_mean=metrics.get("weighted_f1_mean"),
+            weighted_f1_std=metrics.get("weighted_f1_std"),
             success=success,
             error_msg=error_msg,
         )

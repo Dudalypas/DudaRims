@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 import tensorflow as tf
 from PIL import Image, ImageOps
+from sklearn.metrics import classification_report, confusion_matrix, precision_recall_fscore_support
 
 SUPPORTED_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".gif", ".avif"}
 TOP_KS = (1, 3, 5)
@@ -503,16 +504,28 @@ def evaluate_retrieval(
 ) -> tuple[dict[str, float], list[dict[str, Any]], list[dict[str, Any]]]:
     totals = {k: 0 for k in TOP_KS}
     per_class: dict[str, dict[str, Any]] = defaultdict(lambda: {"count": 0, "hits@1": 0, "hits@3": 0, "hits@5": 0})
-    top1_compare: dict[tuple[str, str], int] = defaultdict(int)
+    prediction_rows: list[dict[str, Any]] = []
+    top_k_capture = max(TOP_KS)
 
-    for vec, true_label in zip(query_embeddings, query_labels):
+    for query_index, (vec, true_label) in enumerate(zip(query_embeddings, query_labels)):
         ranked = _class_scores(vec, reference_db, retrieval_mode=retrieval_mode, topn=topn)
         ranked_labels = [lbl for lbl, _ in ranked]
-
-        if ranked_labels:
-            top1_compare[(true_label, ranked_labels[0])] += 1
+        top_k_labels = ranked_labels[:top_k_capture]
+        top_k_scores = [float(score) for _, score in ranked[:top_k_capture]]
 
         per_class[true_label]["count"] += 1
+
+        prediction_rows.append(
+            {
+                "query_index": int(query_index),
+                "true_label": true_label,
+                "top1_predicted_label": ranked_labels[0] if ranked_labels else "",
+                "top_k_labels": json.dumps(top_k_labels, ensure_ascii=False),
+                "top_k_scores": json.dumps(top_k_scores),
+                "retrieval_mode": retrieval_mode,
+                "topn": int(topn),
+            }
+        )
 
         for k in TOP_KS:
             hit = 1 if true_label in ranked_labels[:k] else 0
@@ -540,16 +553,7 @@ def evaluate_retrieval(
             }
         )
 
-    top1_rows = [
-        {
-            "true_label": k[0],
-            "pred_label": k[1],
-            "count": v,
-        }
-        for k, v in sorted(top1_compare.items())
-    ]
-
-    return summary, per_class_rows, top1_rows
+    return summary, per_class_rows, prediction_rows
 
 
 def aggregate_fold_metrics(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -580,6 +584,75 @@ def aggregate_fold_metrics(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def aggregate_classification_fold_metrics(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[(str(row["retrieval_mode"]), int(row["topn"]))].append(row)
+
+    out: list[dict[str, Any]] = []
+    for (mode, topn), items in sorted(grouped.items()):
+        macro_precision = np.asarray([float(i["macro_precision"]) for i in items], dtype=np.float64)
+        macro_recall = np.asarray([float(i["macro_recall"]) for i in items], dtype=np.float64)
+        macro_f1 = np.asarray([float(i["macro_f1"]) for i in items], dtype=np.float64)
+        weighted_precision = np.asarray([float(i["weighted_precision"]) for i in items], dtype=np.float64)
+        weighted_recall = np.asarray([float(i["weighted_recall"]) for i in items], dtype=np.float64)
+        weighted_f1 = np.asarray([float(i["weighted_f1"]) for i in items], dtype=np.float64)
+
+        out.append(
+            {
+                "retrieval_mode": mode,
+                "topn": topn,
+                "folds": len(items),
+                "macro_precision_mean": float(np.mean(macro_precision)),
+                "macro_precision_std": float(np.std(macro_precision)),
+                "macro_recall_mean": float(np.mean(macro_recall)),
+                "macro_recall_std": float(np.std(macro_recall)),
+                "macro_f1_mean": float(np.mean(macro_f1)),
+                "macro_f1_std": float(np.std(macro_f1)),
+                "weighted_precision_mean": float(np.mean(weighted_precision)),
+                "weighted_precision_std": float(np.std(weighted_precision)),
+                "weighted_recall_mean": float(np.mean(weighted_recall)),
+                "weighted_recall_std": float(np.std(weighted_recall)),
+                "weighted_f1_mean": float(np.mean(weighted_f1)),
+                "weighted_f1_std": float(np.std(weighted_f1)),
+            }
+        )
+
+    return out
+
+
+def aggregate_classification_per_class_metrics(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, int, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[(str(row["retrieval_mode"]), int(row["topn"]), str(row["label"]))].append(row)
+
+    out: list[dict[str, Any]] = []
+    for (mode, topn, label), items in sorted(grouped.items()):
+        precision = np.asarray([float(i["precision"]) for i in items], dtype=np.float64)
+        recall = np.asarray([float(i["recall"]) for i in items], dtype=np.float64)
+        f1 = np.asarray([float(i["f1_score"]) for i in items], dtype=np.float64)
+        support = np.asarray([float(i["support"]) for i in items], dtype=np.float64)
+
+        out.append(
+            {
+                "retrieval_mode": mode,
+                "topn": topn,
+                "label": label,
+                "folds": len(items),
+                "precision_mean": float(np.mean(precision)),
+                "precision_std": float(np.std(precision)),
+                "recall_mean": float(np.mean(recall)),
+                "recall_std": float(np.std(recall)),
+                "f1_score_mean": float(np.mean(f1)),
+                "f1_score_std": float(np.std(f1)),
+                "support_mean": float(np.mean(support)),
+                "support_std": float(np.std(support)),
+            }
+        )
+
+    return out
+
+
 def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str] | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not rows and fieldnames is None:
@@ -590,6 +663,108 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str] | No
         writer = csv.DictWriter(f, fieldnames=names)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def build_classification_metrics(rows: list[dict[str, Any]], labels: list[str] | None = None) -> dict[str, Any]:
+    """Build classification-style metrics from top-1 retrieval predictions."""
+    y_true = [str(row["true_label"]) for row in rows]
+    y_pred = [str(row["top1_predicted_label"]) for row in rows]
+
+    if labels is None:
+        labels = sorted(set(y_true) | set(y_pred))
+    else:
+        labels = [str(label) for label in labels]
+
+    if not y_true:
+        empty_cm = np.zeros((len(labels), len(labels)), dtype=np.int64)
+        return {
+            "labels": labels,
+            "classification_report_rows": [],
+            "per_class_metrics_rows": [],
+            "aggregate_metrics": {
+                "macro_precision": 0.0,
+                "macro_recall": 0.0,
+                "macro_f1": 0.0,
+                "weighted_precision": 0.0,
+                "weighted_recall": 0.0,
+                "weighted_f1": 0.0,
+            },
+            "confusion_matrix": empty_cm,
+        }
+
+    report = classification_report(y_true, y_pred, labels=labels, output_dict=True, zero_division=0)
+    precision, recall, f1, support = precision_recall_fscore_support(y_true, y_pred, labels=labels, zero_division=0)
+    macro_precision, macro_recall, macro_f1, _ = precision_recall_fscore_support(
+        y_true,
+        y_pred,
+        labels=labels,
+        average="macro",
+        zero_division=0,
+    )
+    weighted_precision, weighted_recall, weighted_f1, _ = precision_recall_fscore_support(
+        y_true,
+        y_pred,
+        labels=labels,
+        average="weighted",
+        zero_division=0,
+    )
+    cm = confusion_matrix(y_true, y_pred, labels=labels)
+
+    classification_report_rows: list[dict[str, Any]] = []
+    per_class_metrics_rows: list[dict[str, Any]] = []
+    for idx, label in enumerate(labels):
+        classification_report_rows.append(
+            {
+                "label": label,
+                "precision": float(precision[idx]),
+                "recall": float(recall[idx]),
+                "f1_score": float(f1[idx]),
+                "support": int(support[idx]),
+            }
+        )
+        per_class_metrics_rows.append(
+            {
+                "label": label,
+                "support": int(support[idx]),
+                "precision": float(precision[idx]),
+                "recall": float(recall[idx]),
+                "f1_score": float(f1[idx]),
+            }
+        )
+
+    classification_report_rows.extend(
+        [
+            {
+                "label": "macro avg",
+                "precision": float(report["macro avg"]["precision"]),
+                "recall": float(report["macro avg"]["recall"]),
+                "f1_score": float(report["macro avg"]["f1-score"]),
+                "support": int(report["macro avg"]["support"]),
+            },
+            {
+                "label": "weighted avg",
+                "precision": float(report["weighted avg"]["precision"]),
+                "recall": float(report["weighted avg"]["recall"]),
+                "f1_score": float(report["weighted avg"]["f1-score"]),
+                "support": int(report["weighted avg"]["support"]),
+            },
+        ]
+    )
+
+    return {
+        "labels": labels,
+        "classification_report_rows": classification_report_rows,
+        "per_class_metrics_rows": per_class_metrics_rows,
+        "aggregate_metrics": {
+            "macro_precision": float(macro_precision),
+            "macro_recall": float(macro_recall),
+            "macro_f1": float(macro_f1),
+            "weighted_precision": float(weighted_precision),
+            "weighted_recall": float(weighted_recall),
+            "weighted_f1": float(weighted_f1),
+        },
+        "confusion_matrix": cm,
+    }
 
 
 def export_embedding_tflite(embedding_model: tf.keras.Model, output_path: Path, fp16: bool = False) -> None:

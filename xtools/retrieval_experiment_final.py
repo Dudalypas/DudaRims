@@ -7,6 +7,7 @@ from pathlib import Path
 from retrieval_experiment_core import (
     TOP_KS,
     ImageRecord,
+    build_classification_metrics,
     build_reference_db,
     evaluate_retrieval,
     export_embedding_tflite,
@@ -187,16 +188,63 @@ def main() -> None:
     )
 
     topn = args.topn if args.retrieval_mode == "multi_topn_avg" else 1
-    test_summary, per_class_rows, top1_rows = evaluate_retrieval(
+    test_summary, per_class_rows, top1_predictions = evaluate_retrieval(
         query_embeddings=test_emb,
         query_labels=test_labels,
         reference_db=ref_db,
         retrieval_mode=args.retrieval_mode,
         topn=topn,
     )
+    test_classification = build_classification_metrics(top1_predictions, labels=sorted(ref_db.keys()))
 
     write_csv(output_dir / "test_per_class_metrics.csv", per_class_rows)
-    write_csv(output_dir / "test_top1_compare.csv", top1_rows)
+
+    top1_compare_agg = {}
+    for row in top1_predictions:
+        key = (row["true_label"], row["top1_predicted_label"])
+        top1_compare_agg[key] = top1_compare_agg.get(key, 0) + 1
+    top1_compare_rows = [
+        {"true_label": true_label, "pred_label": pred_label, "count": count}
+        for (true_label, pred_label), count in sorted(top1_compare_agg.items())
+    ]
+    write_csv(output_dir / "test_top1_compare.csv", top1_compare_rows)
+    write_csv(output_dir / "test_classification_report.csv", test_classification["classification_report_rows"])
+    write_csv(output_dir / "test_confusion_matrix.csv", [
+        {
+            "true_label": true_label,
+            "pred_label": pred_label,
+            "count": int(test_classification["confusion_matrix"][i, j]),
+        }
+        for i, true_label in enumerate(test_classification["labels"])
+        for j, pred_label in enumerate(test_classification["labels"])
+    ])
+    write_csv(output_dir / "test_top1_predictions.csv", top1_predictions)
+    write_csv(output_dir / "test_classification_metrics.csv", [
+        {
+            "metric": "macro_precision",
+            "value": test_classification["aggregate_metrics"]["macro_precision"],
+        },
+        {
+            "metric": "macro_recall",
+            "value": test_classification["aggregate_metrics"]["macro_recall"],
+        },
+        {
+            "metric": "macro_f1",
+            "value": test_classification["aggregate_metrics"]["macro_f1"],
+        },
+        {
+            "metric": "weighted_precision",
+            "value": test_classification["aggregate_metrics"]["weighted_precision"],
+        },
+        {
+            "metric": "weighted_recall",
+            "value": test_classification["aggregate_metrics"]["weighted_recall"],
+        },
+        {
+            "metric": "weighted_f1",
+            "value": test_classification["aggregate_metrics"]["weighted_f1"],
+        },
+    ])
 
     tflite_out = Path(args.tflite_output)
     tflite_fp16_out = Path(args.tflite_fp16_output)
@@ -264,6 +312,7 @@ def main() -> None:
         },
         "keras_val_metrics": val_metrics,
         "test_retrieval": test_summary,
+        "test_classification": test_classification["aggregate_metrics"],
         "baseline": {
             "val": BASELINE_VAL,
             "test": BASELINE_TEST,
@@ -275,6 +324,10 @@ def main() -> None:
             "reference_json": str(ref_json_out),
             "test_per_class_metrics_csv": str(output_dir / "test_per_class_metrics.csv"),
             "test_top1_compare_csv": str(output_dir / "test_top1_compare.csv"),
+            "test_classification_report_csv": str(output_dir / "test_classification_report.csv"),
+            "test_confusion_matrix_csv": str(output_dir / "test_confusion_matrix.csv"),
+            "test_top1_predictions_csv": str(output_dir / "test_top1_predictions.csv"),
+            "test_classification_metrics_csv": str(output_dir / "test_classification_metrics.csv"),
             "baseline_comparison_csv": str(output_dir / "baseline_comparison_test.csv"),
         },
     }
