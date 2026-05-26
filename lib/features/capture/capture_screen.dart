@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/components/action_button_styles.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/state/app_state.dart';
 import '../../core/theme/theme_tokens.dart';
@@ -46,9 +47,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     if (!AppConstants.enableRealMlInference) {
       _recognitionService = MockRecognitionService(repository);
       if (AppConstants.enablePipelineDebugLogs) {
-        debugPrint(
-          '[RecognitionEntrypoint] CaptureScreen initialized with MockRecognitionService.',
-        );
+        debugPrint('[recognition] capture init: mock');
       }
       return;
     }
@@ -58,11 +57,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     );
 
     if (AppConstants.enablePipelineDebugLogs) {
-      debugPrint(
-        '[RecognitionEntrypoint] CaptureScreen initialized with '
-        '${_recognitionService.runtimeType}. '
-        'runtimePipeline=embeddingRetrieval',
-      );
+      debugPrint('[recognition] capture init: ${_recognitionService.runtimeType}');
     }
   }
 
@@ -84,19 +79,16 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
     var keepTrying = true;
     while (keepTrying) {
+      final stopwatch = Stopwatch()..start();
       try {
         if (AppConstants.enablePipelineDebugLogs) {
-          debugPrint(
-            '[RecognitionEntrypoint] Starting analyze with service=${_recognitionService.runtimeType}',
-          );
+          debugPrint('[recognition] analyze start: ${_recognitionService.runtimeType}');
         }
 
-        final minTransition = Future<void>.delayed(
-          const Duration(milliseconds: 520),
-        );
         final outcomeFuture = _recognitionService.analyze(imageFile);
         final outcome = await outcomeFuture;
-        await minTransition;
+        stopwatch.stop();
+        debugPrint('[perf] recognition_total_ms=${stopwatch.elapsedMilliseconds}');
 
         if (!mounted) return;
         final action = await Navigator.of(context)
@@ -120,6 +112,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
         keepTrying = false;
       } catch (e) {
+        stopwatch.stop();
+        debugPrint('[perf] recognition_failed_ms=${stopwatch.elapsedMilliseconds}');
         if (!mounted) return;
         setState(() {
           _processingError = 'Nepavyko atpažinti ratlankio: $e';
@@ -136,7 +130,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     final selectedCar = context.watch<AppState>().selectedCar;
     final hasPreview = _preview != null;
     final carLabel = selectedCar == null
-        ? 'Pasirink automobilį'
+        ? 'Pasirinkti automobilį'
         : '${selectedCar.model ?? 'Skoda'} ${selectedCar.generationLabel}';
     final colors = Theme.of(context).colorScheme;
 
@@ -220,14 +214,14 @@ class _CaptureScreenState extends State<CaptureScreen> {
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    'Atpažink ratlankį',
+                    'Identifikuokite ratlankį',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Nufotografuok arba įkelk ratlankio nuotrauką. Tai atpažinimo žingsnis, o suderinamumą su automobiliu tikrinsime po to.',
+                    'Nufotografuokite arba įkelkite ratlankio nuotrauką. Tai Identifikavimo žingsnis, o suderinamumas su automobiliu bus tikrinamas po to.',
                     style: TextStyle(color: colors.mutedText),
                   ),
                   const SizedBox(height: 18),
@@ -264,7 +258,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
-                                    'Pasirink įvesties būdą žemiau ir pradėk atpažinimą.',
+                                    'Pasirinkite įvesties būdą ir pradėkite ratlankio identifikavimą.',
                                     style: TextStyle(color: colors.mutedText),
                                   ),
                                 ),
@@ -304,26 +298,22 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     ),
                   ],
                   const Spacer(),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _isProcessing
-                          ? null
-                          : () => _pick(ImageSource.camera),
-                      icon: const Icon(Icons.camera_alt_rounded),
-                      label: const Text('Fotografuoti'),
-                    ),
+                  ActionButtonStyles.primaryButton(
+                    context: context,
+                    onPressed: _isProcessing
+                        ? null
+                        : () => _pick(ImageSource.camera),
+                    label: 'Fotografuoti',
+                    icon: const Icon(Icons.camera_alt_rounded),
                   ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _isProcessing
-                          ? null
-                          : () => _pick(ImageSource.gallery),
-                      icon: const Icon(Icons.photo_library_outlined),
-                      label: const Text('Įkelti nuotrauką'),
-                    ),
+                  const SizedBox(height: ActionButtonStyles.buttonStackSpacing),
+                  ActionButtonStyles.secondaryButton(
+                    context: context,
+                    onPressed: _isProcessing
+                        ? null
+                        : () => _pick(ImageSource.gallery),
+                    label: 'Įkelti nuotrauką',
+                    icon: const Icon(Icons.photo_library_outlined),
                   ),
                 ],
               ),

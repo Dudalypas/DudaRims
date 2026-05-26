@@ -259,7 +259,7 @@ class _RimDetailsScreenState extends State<RimDetailsScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Pasirink automobilį, kad galėtume patikrinti suderinamumą.',
+                'Pasirinkite automobilį, kad galėtume patikrinti suderinamumą.',
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.mutedText,
                 ),

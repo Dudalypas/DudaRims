@@ -53,7 +53,7 @@ class WheelCropService {
     var side = enforceSquare ? math.max(width, height) : width;
     var sideY = enforceSquare ? side : height;
 
-    // Po detekcijos leidziam kvadrata sugrieztinti, kad maziau foninio triuksmo patektu i embeddinga.
+    // Po detekcijos leidziam kvadrata sugrieztinti, kad maziau foninio triuksmo patektu i embeddinga
     if (tightenRatio > 0 && tightenRatio.isFinite) {
       side *= tightenRatio;
       sideY *= tightenRatio;

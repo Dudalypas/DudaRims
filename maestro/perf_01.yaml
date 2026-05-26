@@ -1,0 +1,8 @@
+appId: com.example.dudarims
+---
+- launchApp:
+    clearState: true
+- tapOn: "Įkelti nuotrauką"
+- tapOn: "Photo taken on 3 May 2026 12:54"
+- tapOn: "Done"
+- assertVisible: "Labiausiai panašus ratlankis"

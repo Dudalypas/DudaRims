@@ -1,0 +1,28 @@
+{
+  "fold": 1,
+  "train_size": 2432,
+  "val_size": 612,
+  "keras_val": {
+    "embedding_loss": 0.21942877769470215,
+    "logits_loss": 0.4573349952697754,
+    "logits_top1": 0.8839869499206543,
+    "logits_top3": 0.9738562107086182,
+    "loss": 0.5913494229316711
+  },
+  "retrieval": [
+    {
+      "fold": 1,
+      "retrieval_mode": "centroid",
+      "topn": 1,
+      "recall@1": 0.8905228758169934,
+      "recall@3": 0.9754901960784313,
+      "recall@5": 0.9901960784313726,
+      "macro_precision": 0.8903555867670807,
+      "macro_recall": 0.8839049207751096,
+      "macro_f1": 0.8853090485009297,
+      "weighted_precision": 0.8937724380608919,
+      "weighted_recall": 0.8905228758169934,
+      "weighted_f1": 0.8903220561115218
+    }
+  ]
+}

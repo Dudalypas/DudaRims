@@ -1,0 +1,2 @@
+retrieval_mode,topn,folds,macro_precision_mean,macro_precision_std,macro_recall_mean,macro_recall_std,macro_f1_mean,macro_f1_std,weighted_precision_mean,weighted_precision_std,weighted_recall_mean,weighted_recall_std,weighted_f1_mean,weighted_f1_std
+centroid,1,5,0.8856533603259449,0.020650838034782765,0.877343734517711,0.019483567699249662,0.8790437163038026,0.020482567420597696,0.8886111032946605,0.01950663351751146,0.8845954587261182,0.020217354161624033,0.8843285771116971,0.020623773255729845

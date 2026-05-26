@@ -78,7 +78,7 @@ class TfliteWheelEmbeddingPipeline {
         }
       }
 
-      // Backward compatibility with old centroid-only JSON: classes[].embedding
+      // Suderinamumas su senesniu centroid-only JSON: classes[].embedding
       if (embeddings.isEmpty) {
         final legacyEmbeddingJson = item['embedding'];
         if (legacyEmbeddingJson is List) {
@@ -132,9 +132,8 @@ class TfliteWheelEmbeddingPipeline {
 
     if (AppConstants.enablePipelineDebugLogs) {
       debugPrint(
-        '[EmbeddingRetrievalPipeline] Loaded model=$modelAsset input=$_inputShape '
-        'output=$_outputShape refs=${refs.length} mode=$referenceMode '
-        'aggregation=$aggregationMode topN=$aggregationTopN',
+        '[pipeline] model=$modelAsset input=$_inputShape output=$_outputShape '
+        'refs=${refs.length} mode=$referenceMode agg=$aggregationMode topN=$aggregationTopN',
       );
     }
   }
@@ -166,7 +165,7 @@ class TfliteWheelEmbeddingPipeline {
     for (var y = 0; y < h; y++) {
       for (var x = 0; x < w; x++) {
         final px = resized.getPixel(x, y);
-        // RGB float32 in [0..255].
+        // RGB float32 lieka [0..255], kaip tikisi eksportuotas modelis
         input[i++] = px.r.toDouble();
         input[i++] = px.g.toDouble();
         input[i++] = px.b.toDouble();
@@ -186,7 +185,7 @@ class TfliteWheelEmbeddingPipeline {
     final embedding = _l2Normalize(output[0]);
     if (AppConstants.enablePipelineDebugLogs) {
       debugPrint(
-        '[EmbeddingRetrievalPipeline] Embedding inference complete. outputSize=${embedding.length}',
+        '[pipeline] embedding done size=${embedding.length}',
       );
     }
     return embedding;

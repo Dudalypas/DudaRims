@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'theme_tokens.dart';
+
 class AppTheme {
   static ThemeData light() {
     final scheme = ColorScheme.fromSeed(
@@ -46,7 +48,8 @@ class AppTheme {
       dialogTheme: DialogThemeData(backgroundColor: scheme.surfaceContainerLow),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size(56, 52),
+          minimumSize: const Size(0, AppUiTokens.primaryActionButtonHeight),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -55,7 +58,8 @@ class AppTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          minimumSize: const Size(56, 52),
+          minimumSize: const Size(0, AppUiTokens.primaryActionButtonHeight),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),

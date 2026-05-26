@@ -1,56 +1,77 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
+# Local keys
+key
+key.pub
+*.pem
+*.key
 
-# IntelliJ / Android Studio
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# VS Code
-.vscode/
-
-# Flutter / Dart
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# Local environments
 .dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
+.gradle/
+.venv-wsl/
+tf/
+env/
+venv/
+
+# Local tool/cache folders
+.history/
+.idea/
+.vscode/
+.maestro/
+tmp/
+temp/
+cache/
+raw_html/
+downloads/
+
+# Flutter / platform generated files
 build/
 coverage/
+*.iml
+ios/Flutter/ephemeral/
+macos/Flutter/ephemeral/
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
 
-# Symbolication / obfuscation
-app.*.symbols
-app.*.map.json
+# Python generated files
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+htmlcov/
 
-# Android build outputs
-/android/app/debug
-/android/app/profile
-/android/app/release
+# ML datasets
+PROD_cropped/
+datasets/
+data/raw/
+data/cache/
 
-# Python
+# ML
+runs/
+wandb/
+checkpoints/
+*.keras
+*.h5
+*.ckpt
+*.onnx
+
+# YOLO / detector generated outputs
+xdetection/runs/
+xdetection/predictions/
+xdetection/yolo11n.pt
+xdetection/yolo26n.pt
+xdetection/*.npy
+
+# Generated detector result exports
+xdetection/**/train_batch*.jpg
+xdetection/**/val_batch*.jpg
+xdetection/**/results.csv
+xdetection/**/results.png
+xdetection/**/confusion_matrix*.png
+xdetection/**/Box*_curve.png
+
+# Windows clutter
+Thumbs.db
+desktop.ini
+# Local environment files
+.env
 .venv/
-__pycache__/
-.pytest_cache/
-.mypy_cache/
-
-# Training / experiment outputs
-trained_cropped_classifier/crop_preview/
-trained_cropped_classifier/*.log
-trained_cropped_classifier/*.csv
-trained_cropped_classifier/*.json
-continued_training_output/
-benchmark_outputs/

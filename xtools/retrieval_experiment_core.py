@@ -162,7 +162,6 @@ def _tf_load(path: tf.Tensor, label: tf.Tensor, img_size: int) -> tuple[tf.Tenso
     )
     image.set_shape((img_size, img_size, 3))
     cls = tf.cast(label, tf.int32)
-    # Dual-head model expects y_true structure matching outputs: {embedding, logits}.
     return image, {"embedding": cls, "logits": cls}
 
 
@@ -284,7 +283,7 @@ def build_retrieval_training_model(
         weights="imagenet",
     )
 
-    # Safer thesis-friendly strategy: start frozen, train head first.
+    # Saugiausiai
     backbone.trainable = False
 
     x = backbone(x, training=False)
@@ -328,6 +327,8 @@ def train_one_run(
     triplet_weight: float,
     ce_weight: float,
     dropout: float,
+    early_stopping_patience: int = 5,
+    restore_best_weights: bool = True,
 ) -> tuple[tf.keras.Model, dict[str, float], dict[str, int]]:
     if not train_records:
         raise RuntimeError("No train records for this run.")
@@ -375,8 +376,8 @@ def train_one_run(
         tf.keras.callbacks.EarlyStopping(
             monitor="val_logits_top1",
             mode="max",
-            patience=6,
-            restore_best_weights=True,
+            patience=early_stopping_patience,
+            restore_best_weights=restore_best_weights,
             verbose=1,
         ),
         tf.keras.callbacks.CSVLogger(str(history_csv), append=False),
@@ -390,7 +391,7 @@ def train_one_run(
         verbose=1,
     )
 
-    # Reload best checkpoint weights explicitly for deterministic evaluation/export.
+    # Reloadina geriausia checkpointa svoriu vertinimui/esksportui
     model.load_weights(best_weights_path)
 
     val_metrics = model.evaluate(val_ds, return_dict=True, verbose=1)
@@ -666,7 +667,7 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str] | No
 
 
 def build_classification_metrics(rows: list[dict[str, Any]], labels: list[str] | None = None) -> dict[str, Any]:
-    """Build classification-style metrics from top-1 retrieval predictions."""
+    """Sukuria klasifikacines metrikas is top-1 retrieval prognoziu"""
     y_true = [str(row["true_label"]) for row in rows]
     y_pred = [str(row["top1_predicted_label"]) for row in rows]
 
@@ -804,7 +805,7 @@ def save_reference_json(
                 "sample_count": len(vectors),
                 "centroid_embedding": np.asarray(centroid, dtype=np.float32).tolist(),
                 "references": refs,
-                # backward compatibility
+                # Suderinamumas su senesniu centroid JSON
                 "embedding": np.asarray(centroid, dtype=np.float32).tolist(),
             }
         )

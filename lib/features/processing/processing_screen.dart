@@ -39,12 +39,12 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
     if (!AppConstants.enableRealMlInference) {
       _service = MockRecognitionService(repository);
       if (AppConstants.enablePipelineDebugLogs) {
-        debugPrint('[RecognitionRouting] Using mock recognition service.');
+        debugPrint('[recognition] mock service');
       }
     } else {
       _service = EmbeddingRetrievalRecognitionService(repository: repository);
       if (AppConstants.enablePipelineDebugLogs) {
-        debugPrint('[RecognitionRouting] runtimePipeline=embeddingRetrieval');
+        debugPrint('[recognition] runtime=embeddingRetrieval');
       }
     }
     _timer = Timer.periodic(const Duration(milliseconds: 900), (_) {
@@ -57,8 +57,11 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
   }
 
   Future<void> _run() async {
+    final stopwatch = Stopwatch()..start();
     try {
       final outcome = await _service.analyze(widget.imageFile);
+      stopwatch.stop();
+      debugPrint('[perf] recognition_total_ms=${stopwatch.elapsedMilliseconds}');
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -69,6 +72,8 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
         ),
       );
     } catch (e) {
+      stopwatch.stop();
+      debugPrint('[perf] recognition_failed_ms=${stopwatch.elapsedMilliseconds}');
       if (!mounted) return;
       setState(() {
         _error = 'Nepavyko atlikti analizės: $e';

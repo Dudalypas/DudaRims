@@ -12,8 +12,8 @@ class SettingsScreen extends StatelessWidget {
       'Programėlė palygina tavo nuotrauką su lokalia ratlankių duomenų baze ir pateikia labiausiai panašų modelį arba kelis galimus variantus.',
     ),
     (
-      'Ką reiškia atpažinimo atitikimas?',
-      'Tai yra tik modelio atpažinimo tikimybė. Ji neparodo, ar ratlankis tinka tavo automobiliui.',
+      'Ką reiškia identifikavimo atitikimas?',
+      'Tai yra tik modelio identifikavimo tikimybė. Ji neparodo, ar ratlankis tinka tavo automobiliui.',
     ),
     (
       'Kodėl kartais pateikiami keli galimi variantai?',

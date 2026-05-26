@@ -3,7 +3,7 @@
   "method": "retrieval_embedding_experiment",
   "reference_mode": "limited",
   "source_split": "train+val",
-  "model": "C:\\Users\\vilja\\flutter_bandymas\\trained_cropped_classifier\\retrieval_experiment_v2\\artifacts\\wheel_embedding_experiment_v2_float32.tflite",
+  "model": "models\\wheel_embedding_experiment_v2_float32.tflite",
   "img_size": 224,
   "embedding_size": 256,
   "max_refs_per_class": 20,

@@ -12,9 +12,7 @@ import 'recognition_service.dart';
 import 'wheel_crop_service.dart';
 import 'wheel_detector_service.dart';
 
-// This app uses embedding retrieval for runtime recognition. Legacy classifier
-// fallback was removed from runtime to keep production pipeline deterministic
-// and thesis-aligned.
+// Runtime atpazinimui naudojam embedding retrieval, fallback paliekam tik istorijoje
 class EmbeddingRetrievalRecognitionService implements RecognitionService {
   final LocalFitmentRepository repository;
   final WheelDetectorService detector;
@@ -47,13 +45,13 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
   @override
   Future<RecognitionOutcome> analyze(File imageFile) async {
     if (AppConstants.enablePipelineDebugLogs) {
-      debugPrint('[EmbeddingRetrieval] Analyze started.');
-      debugPrint('[EmbeddingRetrieval] Active assets: model=${embeddingPipeline.modelAsset} refs=${embeddingPipeline.referenceEmbeddingsAsset} mode=${embeddingPipeline.referenceMode}');
+      debugPrint('[recognition] analyze start: ${embeddingPipeline.runtimeType}');
+      debugPrint('[recognition] assets: model=${embeddingPipeline.modelAsset} refs=${embeddingPipeline.referenceEmbeddingsAsset} mode=${embeddingPipeline.referenceMode}');
       debugPrint(
-        '[EmbeddingRetrieval] Ellipse mask enabled=${AppConstants.enableRetrievalEllipseMask} '
+        '[recognition] mask: enabled=${AppConstants.enableRetrievalEllipseMask} '
         'inset=${AppConstants.retrievalEllipseMaskInsetRatio.toStringAsFixed(3)} '
         'feather=${AppConstants.retrievalEllipseMaskFeather.toStringAsFixed(3)} '
-        'circleFallback=${AppConstants.retrievalEllipseMaskUseCircleFallback}',
+        'circle=${AppConstants.retrievalEllipseMaskUseCircleFallback}',
       );
     }
 
@@ -87,7 +85,7 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
         if (detectionRun.bestDetection == null) {
           if (AppConstants.enablePipelineDebugLogs) {
             debugPrint(
-              '[EmbeddingRetrieval][reject] reason=detector_no_box',
+              '[recognition] reject: detector_no_box',
             );
           }
           return RecognitionOutcome.failure(
@@ -116,11 +114,11 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
           if (AppConstants.enablePipelineDebugLogs) {
             if (hardScoreReject) {
               debugPrint(
-                '[EmbeddingRetrieval][reject] reason=detector_score_too_low score=${detection.score.toStringAsFixed(4)} min=${AppConstants.detectorHardMinScoreThreshold.toStringAsFixed(4)}',
+                '[recognition] reject: score=${detection.score.toStringAsFixed(4)} min=${AppConstants.detectorHardMinScoreThreshold.toStringAsFixed(4)}',
               );
             } else {
               debugPrint(
-                '[EmbeddingRetrieval][reject] reason=detector_box_invalid areaRatio=${areaRatio.toStringAsFixed(4)} aspectRatio=${aspectRatio.toStringAsFixed(4)}',
+                '[recognition] reject: area=${areaRatio.toStringAsFixed(4)} aspect=${aspectRatio.toStringAsFixed(4)}',
               );
             }
           }
@@ -141,12 +139,12 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
           if (AppConstants.enablePipelineDebugLogs) {
             if (borderlineScore) {
               debugPrint(
-                '[EmbeddingRetrieval][reject] reason=detector_score_too_low score=${detection.score.toStringAsFixed(4)} min=${AppConstants.detectorMinScoreThreshold.toStringAsFixed(4)}',
+                '[recognition] reject: score=${detection.score.toStringAsFixed(4)} min=${AppConstants.detectorMinScoreThreshold.toStringAsFixed(4)}',
               );
             }
             if (borderlineArea || borderlineAspect) {
               debugPrint(
-                '[EmbeddingRetrieval][reject] reason=detector_box_invalid areaRatio=${areaRatio.toStringAsFixed(4)} aspectRatio=${aspectRatio.toStringAsFixed(4)}',
+                '[recognition] reject: area=${areaRatio.toStringAsFixed(4)} aspect=${aspectRatio.toStringAsFixed(4)}',
               );
             }
           }
@@ -157,7 +155,7 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
             detection,
           );
           if (AppConstants.enablePipelineDebugLogs) {
-            debugPrint('[EmbeddingRetrieval] Crop refinement completed.');
+            debugPrint('[recognition] crop refine done');
           }
           final processed = await _applyOptionalEllipseMask(refinedCrop);
           retrievalInput = processed.file;
@@ -169,9 +167,9 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
       } catch (e, st) {
         if (AppConstants.enablePipelineDebugLogs) {
           debugPrint(
-            '[EmbeddingRetrieval] Detector/crop step failed. error=$e',
+            '[recognition] detector/crop failed: $e',
           );
-          debugPrint('$st');
+          debugPrint('[recognition] stack: $st');
         }
         return RecognitionOutcome.failure(
           reason: AppConstants.recognitionNoRimDetectedMessage,
@@ -199,14 +197,14 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
 
       if (AppConstants.enablePipelineDebugLogs) {
         debugPrint(
-          '[EmbeddingRetrieval] Retrieved raw candidates: ${retrieved.length}.',
+          '[recognition] candidates: ${retrieved.length}',
         );
         if (retrieved.isNotEmpty) {
           final preview = retrieved
               .take(3)
               .map((r) => '${r.label}:${r.cosineSimilarity.toStringAsFixed(3)}')
               .join(', ');
-          debugPrint('[EmbeddingRetrieval] Raw top-3: $preview');
+          debugPrint('[recognition] top3: $preview');
         }
       }
 
@@ -234,11 +232,11 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
       if (candidates.isEmpty) {
         if (AppConstants.enablePipelineDebugLogs) {
           debugPrint(
-            '[EmbeddingRetrieval] No candidates after metadata filter.',
+            '[recognition] no candidates after filter',
           );
           final rawLabels = retrieved.take(5).map((e) => e.label).join(', ');
           debugPrint(
-            '[EmbeddingRetrieval] Raw labels before filter: $rawLabels',
+            '[recognition] raw labels: $rawLabels',
           );
         }
         return RecognitionOutcome.failure(
@@ -256,7 +254,7 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
               .map((c) => '${c.label}:${c.score.toStringAsFixed(3)}')
               .join(', ');
           debugPrint(
-            '[EmbeddingRetrieval][manual_pick_low_confidence] top1=${top1Similarity.toStringAsFixed(4)} min=${AppConstants.retrievalMinTop1Similarity.toStringAsFixed(4)} top3=$preview',
+              '[recognition] manual pick: top1=${top1Similarity.toStringAsFixed(4)} min=${AppConstants.retrievalMinTop1Similarity.toStringAsFixed(4)} top3=$preview',
           );
         }
         return RecognitionOutcome.manualPick(
@@ -274,7 +272,7 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
                 .map((c) => '${c.label}:${c.score.toStringAsFixed(3)}')
                 .join(', ');
             debugPrint(
-              '[EmbeddingRetrieval][manual_pick_small_margin] margin=${margin.toStringAsFixed(4)} min=${AppConstants.retrievalMinTop1Top2Margin.toStringAsFixed(4)} top1=${top1Similarity.toStringAsFixed(4)} top2=${top2Similarity.toStringAsFixed(4)} top3=$preview',
+              '[recognition] manual pick: margin=${margin.toStringAsFixed(4)} min=${AppConstants.retrievalMinTop1Top2Margin.toStringAsFixed(4)} top1=${top1Similarity.toStringAsFixed(4)} top2=${top2Similarity.toStringAsFixed(4)} top3=$preview',
             );
           }
           return RecognitionOutcome.manualPick(
@@ -286,11 +284,10 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
 
       if (AppConstants.enablePipelineDebugLogs) {
         debugPrint(
-          '[EmbeddingRetrieval] Success via embedding path. top1=${candidates.first.label} '
-          'score=${candidates.first.score.toStringAsFixed(4)}',
+          '[recognition] ok: ${candidates.first.label} score=${candidates.first.score.toStringAsFixed(4)}',
         );
         if (usedMaskedCropPath) {
-          debugPrint('[EmbeddingRetrieval] Success via masked embedding path.');
+          debugPrint('[recognition] ok: masked path');
         }
       }
       return RecognitionOutcome(
@@ -298,7 +295,7 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
       );
     } catch (e, st) {
       if (AppConstants.enablePipelineDebugLogs) {
-        debugPrint('[EmbeddingRetrieval] Exception in embedding path: $e');
+        debugPrint('[recognition] error: $e');
         debugPrint('$st');
       }
       return RecognitionOutcome.failure(
@@ -327,7 +324,7 @@ class EmbeddingRetrievalRecognitionService implements RecognitionService {
     final width = oriented.width;
     final height = oriented.height;
     if (AppConstants.enablePipelineDebugLogs) {
-      debugPrint('[EmbeddingRetrieval] Crop size before masking: ${width}x$height');
+      debugPrint('[recognition] crop: ${width}x$height');
     }
 
     final cx = (width - 1) / 2.0;

@@ -1,0 +1,9 @@
+appId: com.example.dudarims
+---
+- launchApp:
+    clearState: true
+- tapOn: "Įkelti nuotrauką"
+- tapOn:
+    point: "83%,80%"
+- tapOn: "Done"
+- assertVisible: "Labiausiai panašus ratlankis"

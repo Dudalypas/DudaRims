@@ -45,13 +45,13 @@ class WheelDetectorService {
     _inputShape = _interpreter!.getInputTensor(0).shape;
     _outputShape = _interpreter!.getOutputTensor(0).shape;
 
-    debugPrint('[WheelDetector] Input tensor shape: $_inputShape');
-    debugPrint('[WheelDetector] Output tensor shape: $_outputShape');
+    debugPrint('[detector] input: $_inputShape');
+    debugPrint('[detector] output: $_outputShape');
   }
 
   Future<WheelDetectionRunResult> detectBest(
     File imageFile, {
-    bool saveDebugImage = true,
+    bool saveDebugImage = false,
   }) async {
     await _ensureLoaded();
 
@@ -70,7 +70,6 @@ class WheelDetectorService {
       for (var x = 0; x < inputSize; x++) {
         final px = prep.image.getPixel(x, y);
         // Detectoriui paduodam normalizuota RGB [0..1], nes taip eksportuotas modelis
-        // Jei ka sita irgi pakeisti reiks, jei modelis bus kitokiu inputu treniruotas
         input[offset++] = px.r / 255.0;
         input[offset++] = px.g / 255.0;
         input[offset++] = px.b / 255.0;
@@ -94,30 +93,21 @@ class WheelDetectorService {
       originalHeight: oriented.height,
     );
 
-    debugPrint(
-      '[WheelDetector] Raw candidates above threshold: ${candidates.length}',
-    );
+    debugPrint('[detector] candidates: ${candidates.length}');
 
     final kept = _nms(candidates, nmsThreshold);
     final best = kept.isEmpty ? null : kept.first;
 
     if (best != null) {
-      debugPrint(
-        '[WheelDetector] Final box: '
-        'left=${best.left.toStringAsFixed(1)}, '
-        'top=${best.top.toStringAsFixed(1)}, '
-        'right=${best.right.toStringAsFixed(1)}, '
-        'bottom=${best.bottom.toStringAsFixed(1)}, '
-        'score=${best.score.toStringAsFixed(3)}',
-      );
+      debugPrint('[detector] box: ${best.left.toStringAsFixed(1)},${best.top.toStringAsFixed(1)},${best.right.toStringAsFixed(1)},${best.bottom.toStringAsFixed(1)} score=${best.score.toStringAsFixed(3)}');
     } else {
-      debugPrint('[WheelDetector] No final detection selected after NMS.');
+      debugPrint('[detector] no box');
     }
 
     File? debugFile;
     if (saveDebugImage && best != null) {
       debugFile = await _saveDebugOverlay(oriented, best);
-      debugPrint('[WheelDetector] Debug image saved: ${debugFile.path}');
+      debugPrint('[detector] debug: ${debugFile.path}');
     }
 
     return WheelDetectionRunResult(
@@ -143,7 +133,7 @@ class WheelDetectorService {
     final out0 = output[0];
     final candidates = <DetectionResult>[];
 
-    // Sutinkam abu daznus layout'us: [1,5,N] ir [1,N,5].
+    // Sutinkam abu daznus layoutus: [1,5,N] ir [1,N,5]
     if (shape[1] == 5) {
       final count = shape[2];
       for (var i = 0; i < count; i++) {
@@ -230,7 +220,7 @@ class WheelDetectorService {
     final x2Model = boxCx + boxW / 2.0;
     final y2Model = boxCy + boxH / 2.0;
 
-    // Atstatom is letterbox koordinaci atgal i originalios nuotraukos sistema
+    // Atstatom is letterbox koordinaciu i originalios nuotraukos sistema
     var left = (x1Model - prep.padX) / prep.scale;
     var top = (y1Model - prep.padY) / prep.scale;
     var right = (x2Model - prep.padX) / prep.scale;

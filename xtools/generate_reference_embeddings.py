@@ -10,7 +10,7 @@ import tensorflow as tf
 from PIL import Image, ImageOps
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DATASET_ROOT = Path(r"C:\Users\vilja\Desktop\Training_Mixed_V1")
+DEFAULT_DATASET_ROOT = PROJECT_ROOT / "Training_Mixed_V1"
 DEFAULT_EMBEDDING_MODEL = PROJECT_ROOT / "assets" / "models" / "wheel_embedding_cropped_float32.tflite"
 DEFAULT_OUTPUT_JSON = PROJECT_ROOT / "assets" / "data" / "wheel_reference_embeddings.json"
 DEFAULT_DETECTOR_MODEL = PROJECT_ROOT / "assets" / "models" / "best_float16.tflite"
@@ -191,25 +191,25 @@ def refined_crop(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate retrieval reference embeddings from train split."
+        description="Generate reference embeddings from train split"
     )
-    parser.add_argument("--dataset-root", type=str, default=str(DEFAULT_DATASET_ROOT))
-    parser.add_argument("--split", type=str, default="train")
-    parser.add_argument("--model", type=str, default=str(DEFAULT_EMBEDDING_MODEL))
-    parser.add_argument("--output", type=str, default=str(DEFAULT_OUTPUT_JSON))
-    parser.add_argument("--img-size", type=int, default=224)
-    parser.add_argument("--reference-mode", choices=["all", "limited", "centroid"], default="limited")
-    parser.add_argument("--max-refs-per-class", type=int, default=20)
-    parser.add_argument("--sampling", choices=["first", "random"], default="random")
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--include-centroid", action="store_true")
-    parser.add_argument("--detector-model", type=str, default=str(DEFAULT_DETECTOR_MODEL))
-    parser.add_argument("--use-detector-crop", action="store_true")
-    parser.add_argument("--crop-padding-ratio", type=float, default=0.04)
-    parser.add_argument("--crop-tighten-ratio", type=float, default=0.94)
-    parser.add_argument("--crop-enforce-square", action="store_true")
-    parser.add_argument("--save-crops-dir", type=str, default="")
-    parser.add_argument("--save-crops-per-class", type=int, default=6)
+    parser.add_argument("--dataset-root", type=str, default=str(DEFAULT_DATASET_ROOT), help="Root folder with split data")
+    parser.add_argument("--split", type=str, default="train", help="Split to process")
+    parser.add_argument("--model", type=str, default=str(DEFAULT_EMBEDDING_MODEL), help="Embedding model path")
+    parser.add_argument("--output", type=str, default=str(DEFAULT_OUTPUT_JSON), help="Output reference JSON")
+    parser.add_argument("--img-size", type=int, default=224, help="Input size for embeddings")
+    parser.add_argument("--reference-mode", choices=["all", "limited", "centroid"], default="limited", help="Reference sampling mode")
+    parser.add_argument("--max-refs-per-class", type=int, default=20, help="Max samples per class")
+    parser.add_argument("--sampling", choices=["first", "random"], default="random", help="Sampling strategy")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--include-centroid", action="store_true", help="Store centroid embeddings too")
+    parser.add_argument("--detector-model", type=str, default=str(DEFAULT_DETECTOR_MODEL), help="Detector model path")
+    parser.add_argument("--use-detector-crop", action="store_true", help="Crop with detector first")
+    parser.add_argument("--crop-padding-ratio", type=float, default=0.04, help="Detector crop padding ratio")
+    parser.add_argument("--crop-tighten-ratio", type=float, default=0.94, help="Detector crop tighten ratio")
+    parser.add_argument("--crop-enforce-square", action="store_true", help="Force square crops")
+    parser.add_argument("--save-crops-dir", type=str, default="", help="Optional debug crop directory")
+    parser.add_argument("--save-crops-per-class", type=int, default=6, help="Saved debug crops per class")
     return parser.parse_args()
 
 
@@ -359,7 +359,7 @@ def main() -> None:
     for class_dir in class_dirs:
         images = iter_images(class_dir)
         if not images:
-            print(f"Skipping empty class: {class_dir.name}")
+            print(f"[gen] skip empty class: {class_dir.name}")
             continue
 
         sampled_paths = sample_paths(
@@ -396,10 +396,10 @@ def main() -> None:
                 vec = l2_normalize(np.asarray(out, dtype=np.float32).reshape(-1))
                 vectors.append(vec)
             except Exception as exc:
-                print(f"WARN: Failed embedding for {image_path}: {exc}")
+                print(f"[gen] warn: embedding failed {image_path}: {exc}")
 
         if not vectors:
-            print(f"Skipping class without valid embeddings: {class_dir.name}")
+            print(f"[gen] skip no embeddings: {class_dir.name}")
             continue
 
         stack = np.stack(vectors, axis=0)
@@ -424,8 +424,6 @@ def main() -> None:
                     if (args.include_centroid or args.reference_mode == "centroid")
                     else None
                 ),
-                "references": references_payload,
-                # Backward compatibility for older centroid-only readers.
                 "embedding": centroid.astype(np.float32).tolist(),
             }
         )
@@ -466,9 +464,9 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    print("Saved reference embeddings:", output_path)
-    print("Classes:", len(class_records))
-    print("Embedding size:", embedding_size)
+    print("[gen] saved:", output_path)
+    print("[gen] classes:", len(class_records))
+    print("[gen] embedding_size:", embedding_size)
 
 
 if __name__ == "__main__":

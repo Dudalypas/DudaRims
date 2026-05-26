@@ -1,2 +1,0 @@
-brand,model,generation,year_from,year_to,pcd,cb,bolt_count,thread_size,center_bore_mm,diameter_min_in,diameter_max_in,width_min_j,width_max_j,et_min,et_max,notes,source_type,source_page,extraction_confidence,needs_manual_review
-Skoda,Octavia,Mk1 A4 (1U),1996,2004,5x100,57.1,5,M14 x 1.5,57.1,14.0,17.0,6.0,7.0,38.0,42.0,aggregated_from_modifications=5 | modification_names=1.6i|1.8i|1.9D|1.9TDI | tables_parsed=5 | rim_rows_parsed=15,tirewheelguide,https://tirewheelguide.com/sizes/skoda/octavia/1996/,0.9,False

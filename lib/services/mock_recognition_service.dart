@@ -13,7 +13,7 @@ class MockRecognitionService implements RecognitionService {
 
   @override
   Future<RecognitionOutcome> analyze(File imageFile) async {
-    // Mockas UI testams, jungikli pasidaryt reiktu
+    // Mockas UI testams
     final wheelSpecs = await repository.loadWheelSpecs();
     final classes = <String>{
       for (final spec in wheelSpecs)

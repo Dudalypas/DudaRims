@@ -23,7 +23,7 @@ from retrieval_experiment_core import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_EXPERIMENT_ROOT = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_experiment_v2"
+DEFAULT_EXPERIMENT_ROOT = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_experiment_v3"
 DEFAULT_DEV_CSV = DEFAULT_EXPERIMENT_ROOT / "folds" / "dev_with_folds.csv"
 DEFAULT_TEST_CSV = DEFAULT_EXPERIMENT_ROOT / "folds" / "test_holdout.csv"
 
@@ -58,7 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reference-mode", choices=["all", "limited"], default="limited")
     parser.add_argument("--max-refs-per-class", type=int, default=20)
 
-    parser.add_argument("--retrieval-mode", choices=["centroid", "multi_max", "multi_topn_avg"], default="multi_topn_avg")
+    parser.add_argument("--retrieval-mode", choices=["centroid", "multi_max", "multi_topn_avg"], default="centroid")
     parser.add_argument("--topn", type=int, default=3)
 
     parser.add_argument(
@@ -131,9 +131,7 @@ def main() -> None:
         raise FileNotFoundError(
             "Missing retrieval manifest CSV file(s): "
             + ", ".join(missing)
-            + "\nRegenerate folds first, e.g.: "
-            + "python xtools/retrieval_experiment_build_folds.py "
-            + f"--output-dir \"{dev_csv_path.parent}\""
+            + "\nRegenerate folds first"
         )
 
     dev_records = read_records_csv(dev_csv_path)
@@ -164,8 +162,7 @@ def main() -> None:
     )
 
     embedding_model = extract_embedding_model(model)
-
-    # Build references strictly from full development set (TRAIN+VAL), never TEST.
+    
     dev_emb, dev_labels, _ = infer_embeddings(
         embedding_model=embedding_model,
         records=dev_records,
@@ -333,10 +330,10 @@ def main() -> None:
     }
     save_json(run_summary, output_dir / "final_summary.json")
 
-    print("Final TEST retrieval:", test_summary)
-    print("Saved final summary:", output_dir / "final_summary.json")
-    print("Exported TFLite:", tflite_out)
-    print("Exported references:", ref_json_out)
+    print("[final] test:", test_summary)
+    print("[final] summary:", output_dir / "final_summary.json")
+    print("[final] tflite:", tflite_out)
+    print("[final] refs:", ref_json_out)
 
 
 if __name__ == "__main__":

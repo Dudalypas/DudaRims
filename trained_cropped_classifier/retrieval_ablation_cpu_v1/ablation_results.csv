@@ -1,7 +1,0 @@
-config_name,description,embedding_dim,learning_rate,triplet_margin,dropout,batch_size,img_size,success,recall@1_mean,recall@1_std,recall@3_mean,recall@3_std,recall@5_mean,recall@5_std,error_msg
-baseline,"Baseline: embedding_dim=256, lr=1e-3, triplet_margin=0.2, dropout=0.2",256,0.001,0.2,0.2,32,224,0,,,,,,,"CV run failed with return code 1: WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
-I0000 00:00:1777397696.140081   17828 port.cc:153] oneDNN custom operations are on. You may see slightly differen"
-embedding_dim_128,Ablation: embedding_dim=128 (smaller),128,0.001,0.2,0.2,32,224,0,,,,,,,"CV run failed with return code 1: WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
-I0000 00:00:1777397707.765661   53268 port.cc:153] oneDNN custom operations are on. You may see slightly differen"
-learning_rate_3e4,Ablation: learning_rate=3e-4 (slower),256,0.0003,0.2,0.2,32,224,0,,,,,,,"CV run failed with return code 1: WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
-I0000 00:00:1777397717.418224    4876 port.cc:153] oneDNN custom operations are on. You may see slightly differen"

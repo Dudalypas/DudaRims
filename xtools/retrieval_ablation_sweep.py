@@ -1,16 +1,9 @@
 #!/usr/bin/env python3
 """
-Thesis-safe ablation experiment for embedding retrieval training pipeline.
+Sukuria ir ivertina retrieval modelio abliacijos eksperimentus
 
-This script implements a limited one-factor-at-a-time ablation study to provide
-empirical evidence that important training and retrieval parameters were evaluated.
-
-Key design decisions (thesis-safe):
-- Baseline + 7 specific ablation variants (not exhaustive grid search).
-- One-factor-at-a-time: each variant changes ONE parameter from baseline.
-- Reuses existing retrieval_experiment_cv.py (no new training code).
-- Clearly documents which parameters are architecture choices vs evaluated variants.
-- Does NOT claim global optimization (instead: "best among tested configurations").
+Ivestis: bazine konfiguraicija ir vertinimo duomenu failai
+Isvestis: rezultatu CSV/JSON failai ir trumpa suvestine
 """
 
 from __future__ import annotations
@@ -26,10 +19,10 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_EXPERIMENT_ROOT = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_ablation_v1"
-DEFAULT_DATASET_ROOT = Path(r"C:\Users\vilja\Desktop\PROD_cropped")
+DEFAULT_DATASET_ROOT = PROJECT_ROOT / "PROD_cropped"
 DEFAULT_FOLDS_CSV = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_experiment_v2" / "folds" / "dev_with_folds.csv"
 
-# Baseline configuration: matches verified defaults from retrieval_experiment_cv.py
+# Bazine konfiguracija
 BASELINE_CONFIG = {
     "name": "baseline",
     "description": "Baseline: embedding_dim=256, lr=1e-3, triplet_margin=0.2, dropout=0.2",
@@ -37,6 +30,7 @@ BASELINE_CONFIG = {
     "batch_size": 32,
     "epochs": 32,
     "seed": 42,
+    "early_stopping_patience": 5,
     "embedding_dim": 256,
     "learning_rate": 1e-3,
     "triplet_margin": 0.2,
@@ -49,7 +43,7 @@ BASELINE_CONFIG = {
     "topn": 1,
 }
 
-# One-factor-at-a-time ablation variants (each changes ONE parameter from baseline)
+# Vieno faktoriaus abliacijos variantai (kiekvienas keicia VIENA parametra nuo pradinio lygio)
 ABLATION_CONFIGS = [
     {
         "name": "embedding_dim_128",
@@ -95,7 +89,7 @@ ABLATION_CONFIGS = [
     },
 ]
 
-# Quick mode: only baseline + 2 key variants (for smoke testing)
+# Smoke testui
 QUICK_MODE_CONFIGS = [c for c in [BASELINE_CONFIG] + ABLATION_CONFIGS if c["name"] in ["baseline", "embedding_dim_128", "learning_rate_3e4"]]
 
 
@@ -112,6 +106,7 @@ class ExperimentResult:
     recall_at_3_std: float | None
     recall_at_5_mean: float | None
     recall_at_5_std: float | None
+    success: bool
     macro_precision_mean: float | None = None
     macro_precision_std: float | None = None
     macro_recall_mean: float | None = None
@@ -124,43 +119,40 @@ class ExperimentResult:
     weighted_recall_std: float | None = None
     weighted_f1_mean: float | None = None
     weighted_f1_std: float | None = None
-    success: bool
     error_msg: str | None = None
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Ablation experiment for embedding retrieval training. "
-            "Runs one-factor-at-a-time variants of the baseline configuration and collects evidence "
-            "that important parameters were empirically evaluated."
+            "Run ablation variants for the retrieval model"
         )
     )
-    parser.add_argument("--dataset-root", type=str, default=str(DEFAULT_DATASET_ROOT))
-    parser.add_argument("--output-dir", type=str, default=str(DEFAULT_EXPERIMENT_ROOT))
-    parser.add_argument("--folds-csv", type=str, default=str(DEFAULT_FOLDS_CSV))
-    parser.add_argument("--folds", type=int, default=5, help="Number of unique fold ids to use in normal mode.")
-    parser.add_argument("--epochs", type=int, default=32, help="Max training epochs for all runs (can be overridden with --quick)")
+    parser.add_argument("--dataset-root", type=str, default=str(DEFAULT_DATASET_ROOT), help="Root folder with split data")
+    parser.add_argument("--output-dir", type=str, default=str(DEFAULT_EXPERIMENT_ROOT), help="Output directory for runs")
+    parser.add_argument("--folds-csv", type=str, default=str(DEFAULT_FOLDS_CSV), help="Development folds CSV")
+    parser.add_argument("--folds", type=int, default=5, help="Fold count for normal mode")
+    parser.add_argument("--epochs", type=int, default=32, help="Max epochs for normal mode")
     parser.add_argument(
         "--quick",
         action="store_true",
-        help="Quick mode: only run baseline, embedding_dim_128, and learning_rate_3e4 (with reduced epochs/folds).",
+        help="Run a small smoke test set",
     )
-    parser.add_argument("--quick-epochs", type=int, default=2, help="Epochs for quick mode smoke test.")
-    parser.add_argument("--quick-folds", type=int, default=2, help="Number of folds for quick mode (will pick first N folds).")
+    parser.add_argument("--quick-epochs", type=int, default=2, help="Epoch count for quick test")
+    parser.add_argument("--quick-folds", type=int, default=2, help="Fold count for quick test")
     parser.add_argument(
         "--timeout-hours",
         type=float,
         default=0.0,
-        help="Per-run timeout in hours. Use 0 for no timeout.",
+        help="Run timeout in hours, 0 disables it",
     )
-    parser.add_argument("--dry-run", action="store_true", help="Print commands but do not execute.")
-    parser.add_argument("--skip-existing", action="store_true", help="Skip runs whose output dir already exists.")
+    parser.add_argument("--dry-run", action="store_true", help="Print commands only")
+    parser.add_argument("--skip-existing", action="store_true", help="Skip existing run folders")
     return parser.parse_args()
 
 
 def extract_cv_metrics(cv_summary_path: Path) -> dict[str, float | None]:
-    """Extract centroid retrieval mode metrics from cv_summary.json."""
+    """Nuskaito centroid metrikas is cv_summary.json"""
 
     def none_metrics() -> dict[str, float | None]:
         return {
@@ -334,7 +326,7 @@ def read_fold_ids(folds_csv: Path) -> list[int]:
 
 
 def limit_folds_csv(source_csv: Path, target_csv: Path, max_folds: int, dry_run: bool) -> Path:
-    """Create a filtered CSV containing only the first N unique fold ids."""
+    """Atrenka pirmus N fold id i nauja CSV"""
     if max_folds <= 0:
         raise ValueError("max_folds must be >= 1")
 
@@ -344,7 +336,7 @@ def limit_folds_csv(source_csv: Path, target_csv: Path, max_folds: int, dry_run:
         raise RuntimeError(f"No fold ids found in {source_csv}")
 
     if dry_run:
-        print(f"[DRY-RUN] Would create filtered folds CSV with folds {selected}: {target_csv}")
+        print(f"[ablation] dry-run folds={selected}: {target_csv}")
         return target_csv
 
     target_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -383,10 +375,7 @@ def run_cv_for_config(
     timeout_hours: float = 0.0,
     dry_run: bool = False,
 ) -> tuple[bool, str | None]:
-    """
-    Run retrieval_experiment_cv.py with the given config.
-    Returns (success, error_msg).
-    """
+    """Paleidzia retrieval_experiment_cv.py su duota konfiguraicija"""
     if not dry_run:
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -399,6 +388,7 @@ def run_cv_for_config(
         "--batch-size", str(config["batch_size"]),
         "--epochs", str(config["epochs"]),
         "--seed", str(config["seed"]),
+        "--early-stopping-patience", str(config.get("early_stopping_patience", 5)),
         "--embedding-dim", str(config["embedding_dim"]),
         "--learning-rate", str(config["learning_rate"]),
         "--triplet-margin", str(config["triplet_margin"]),
@@ -407,19 +397,16 @@ def run_cv_for_config(
         "--dropout", str(config["dropout"]),
         "--reference-mode", str(config["reference_mode"]),
         "--max-refs-per-class", str(config["max_refs_per_class"]),
-        "--retrieval-modes", "centroid",  # Only centroid for this ablation.
+        "--retrieval-modes", "centroid",  # Pagal cv, pickintas centroidas
         "--topn", str(config["topn"]),
     ]
 
     if dry_run:
-        print(f"[DRY-RUN] {' '.join(cmd)}")
+        print(f"[ablation] dry-run {' '.join(cmd)}")
         return True, None
 
-    print(f"\n{'='*80}")
-    print(f"Running: {config['name']}")
-    print(f"Description: {config['description']}")
-    print(f"Output: {output_dir}")
-    print(f"{'='*80}")
+    print(f"\n[ablation] run: {config['name']}")
+    print(f"[ablation] out: {output_dir}")
 
     try:
         run_kwargs: dict[str, Any] = {
@@ -431,33 +418,30 @@ def run_cv_for_config(
 
         result = subprocess.run(cmd, **run_kwargs)
         if result.returncode == 0:
-            print(f"✓ {config['name']} completed successfully.")
+            print(f"[ablation] ok: {config['name']}")
             return True, None
         else:
             err = result.stderr if result.stderr else result.stdout
             msg = f"CV run failed with return code {result.returncode}: {err[:200]}"
-            print(f"✗ {config['name']} failed: {msg}")
+            print(f"[ablation] fail: {config['name']} {msg}")
             return False, msg
     except subprocess.TimeoutExpired:
         msg = f"CV run timed out after 1 hour."
-        print(f"✗ {config['name']} timed out.")
+        print(f"[ablation] timeout: {config['name']}")
         return False, msg
     except Exception as e:
         msg = f"Exception during CV run: {e}"
-        print(f"✗ {config['name']} exception: {msg}")
+        print(f"[ablation] error: {config['name']} {msg}")
         return False, msg
 
 
 def select_best_config(results: list[ExperimentResult]) -> tuple[ExperimentResult | None, str]:
-    """
-    Select best config by: recall@1 mean (primary), then recall@3 mean, then simpler model, then baseline.
-    Returns (best_result, justification_text).
-    """
+    """Parenka geriausia konfiguraicija pagal recall@1 ir recall@3"""
     successful = [r for r in results if r.success and r.recall_at_1_mean is not None]
     if not successful:
         return None, "No successful runs."
 
-    # Sort by recall@1 mean (descending), then recall@3 mean, then prefer smaller embedding_dim, then baseline.
+    # Rikiuojam pagal recall@1, tada recall@3, tada mazesni embedding_dim, o galiausiai baseline
     def sort_key(r: ExperimentResult) -> tuple:
         recall1 = r.recall_at_1_mean or -1.0
         recall3 = r.recall_at_3_mean or -1.0
@@ -484,7 +468,7 @@ def write_results(
     results: list[ExperimentResult],
     output_root: Path,
 ) -> None:
-    """Write results to CSV, JSON, best_config.json, and parameter_justification.md."""
+    """Isveda rezultatus i CSV, JSON ir best_config faila"""
     output_root.mkdir(parents=True, exist_ok=True)
 
     # CSV results
@@ -553,7 +537,7 @@ def write_results(
                 "weighted_f1_std": r.weighted_f1_std,
                 "error_msg": r.error_msg or "",
             })
-    print(f"Wrote ablation results to: {csv_path}")
+    print(f"[ablation] csv: {csv_path}")
 
     # JSON results
     json_path = output_root / "ablation_results.json"
@@ -584,7 +568,7 @@ def write_results(
         ],
     }
     json_path.write_text(json.dumps(json_data, indent=2), encoding="utf-8")
-    print(f"Wrote JSON results to: {json_path}")
+    print(f"[ablation] json: {json_path}")
 
     # Best config
     best_result, best_justification = select_best_config(results)
@@ -607,208 +591,7 @@ def write_results(
             "config": best_result.config,
         }
         best_config_path.write_text(json.dumps(best_config_data, indent=2), encoding="utf-8")
-        print(f"Wrote best config to: {best_config_path}")
-
-
-def write_parameter_justification(
-    results: list[ExperimentResult],
-    output_root: Path,
-) -> None:
-    """Write thesis-safe parameter justification markdown with Lithuanian wording."""
-    md_path = output_root / "parameter_justification.md"
-
-    best_result, best_justification = select_best_config(results)
-
-    # Build results table
-    results_table = "| Config | Recall@1 (mean±std) | Recall@3 (mean±std) | Recall@5 (mean±std) | Status |\n"
-    results_table += "|--------|-------------------|-------------------|-------------------|--------|\n"
-    for r in results:
-        if r.success and r.recall_at_1_mean is not None:
-            r1 = f"{r.recall_at_1_mean:.4f}±{r.recall_at_1_std:.4f}"
-            r3 = f"{r.recall_at_3_mean:.4f}±{r.recall_at_3_std:.4f}"
-            r5 = f"{r.recall_at_5_mean:.4f}±{r.recall_at_5_std:.4f}"
-            status = "✓ Best" if (best_result and r.name == best_result.name) else "✓ OK"
-        else:
-            r1 = r3 = r5 = "—"
-            status = f"✗ Failed" if r.error_msg else "✗ Skipped"
-        results_table += f"| {r.name} | {r1} | {r3} | {r5} | {status} |\n"
-
-    markdown_content = f"""# Embedding Retrieval Model: Ablation Study Evidence
-
-## 1. Experiment Goal
-
-This document presents evidence that important training and retrieval parameters for the embedding retrieval model were evaluated empirically through a limited one-factor-at-a-time ablation study.
-
-**Key clarification:** This study does NOT claim global optimization across all possible parameter combinations. Instead, it provides evidence that selected parameters were empirically tested and the best performing configuration among those variants was identified.
-
-## 2. One-Factor-At-A-Time Ablation Design
-
-Each ablation variant changes exactly ONE parameter from a verified baseline configuration. This approach:
-- Isolates the effect of individual parameters
-- Remains computationally feasible for thesis timelines
-- Provides clear evidence of empirical parameter evaluation
-- Maintains clarity about which choices are architectural vs. empirically optimized
-
-### Baseline Configuration
-```json
-{{
-  "img_size": 224,
-  "batch_size": 32,
-  "epochs": 32,
-  "seed": 42,
-  "embedding_dim": 256,
-  "learning_rate": 1e-3,
-  "triplet_margin": 0.2,
-  "triplet_weight": 0.5,
-  "ce_weight": 1.0,
-  "dropout": 0.2,
-  "retrieval_mode": "centroid"
-}}
-```
-
-### Ablation Variants
-1. **embedding_dim_128**: Tests smaller embedding dimensionality (256 → 128)
-2. **embedding_dim_512**: Tests larger embedding dimensionality (256 → 512)
-3. **learning_rate_3e4**: Tests slower learning rate (1e-3 → 3e-4)
-4. **triplet_margin_03**: Tests larger triplet margin (0.2 → 0.3)
-5. **dropout_03**: Tests increased regularization (0.2 → 0.3)
-6. **batch_size_16**: Tests smaller batch size (32 → 16); limited sensitivity check
-7. **img_size_192**: Tests smaller input resolution (224 → 192); limited sensitivity check
-
-## 3. Important Methodological Clarifications for Thesis
-
-### 3.1 Adam Optimizer ≠ Hyperparameter Optimization
-
-The model training uses **TensorFlow Adam optimizer** with a fixed learning rate parameter. This is NOT a hyperparameter search method.
-
-**Distinction:**
-- **Adam:** An adaptive gradient descent optimizer that rescales gradients per parameter independently. Adam's internal mechanics (momentum, adaptive learning rates per weight) do not search over the hyperparameter space; instead, they improve convergence within a fixed learning rate.
-- **Hyperparameter search:** Explicit enumeration of candidate values (e.g., trying learning_rate ∈ {{1e-3, 3e-4, 1e-4}}) and selecting the best based on validation performance.
-
-This ablation study provides evidence of the latter (explicit hyperparameter evaluation), not the former.
-
-### 3.2 Seed as Reproducibility Control, NOT Optimization Parameter
-
-**Seed (random_seed = 42) is NOT treated as an optimization parameter.**
-
-Why:
-- Seed controls initialization randomness and data shuffle order for reproducibility.
-- Varying seed to maximize performance would be a form of overfitting to random initialization.
-- Thesis-quality work fixes seed to ensure deterministic, reproducible results.
-- Different seeds may yield different metrics due to random variance, not fundamental model differences.
-
-**Thesis statement:** "Seed naudotas atkartojamumui užtikrinti, o ne rezultatams optimizuoti. Visos eksperimentinės seros naudojo seed=42."
-
-### 3.3 Epochs as Training Budget (Not Optimized), EarlyStopping as Automatic Best Selection
-
-**Epochs (maximum=32) is NOT treated as an optimized hyperparameter.**
-
-Why:
-- Epochs define the maximum training budget (computational/time limit).
-- **EarlyStopping callback** monitors validation accuracy and stops training early if no improvement for 6 epochs, with `restore_best_weights=True`.
-- This means the effective number of epochs trained is adaptive and determined automatically by validation performance, not a hyperparameter to search over.
-- Including epochs in a sweep would conflate training budget with model capacity/learning dynamics.
-
-**Thesis statement:** "Epochų skaičius naudotas kaip maksimali mokymo riba. Geriausios modelio būsenos pasirinktos automatizuotai EarlyStopping ir ModelCheckpoint mechanizmais, kurie stebėjo validacijos tikslumą."
-
-### 3.4 Internal Validation Ratio as Protocol Parameter (Not Optimized)
-
-In final training (retrieval_experiment_final.py), an internal validation split (default 10% of TRAIN+VAL) is used during training for EarlyStopping monitoring. This is NOT an optimization parameter.
-
-Why:
-- It is a **protocol choice** for final model training workflow.
-- It ensures test set remains untouched during all training/selection.
-- Varying this ratio to optimize performance would risk overfitting to the internal validation split.
-
-**Not included in this ablation.**
-
-### 3.5 img_size and batch_size: Limited Sensitivity Checks
-
-Variants **img_size_192** and **batch_size_16** are included as limited sensitivity checks, NOT primary hyperparameter searches.
-
-Why:
-- These are typically constrained by hardware (memory, latency requirements).
-- Their effect on final performance is less direct than embedding_dim, learning_rate, or loss weights.
-- They demonstrate due diligence in testing but are secondary to core embedding model choices.
-
-**Thesis statement:** "img_size ir batch_size pateikiami kaip ribota jautruminė analizė, nuo kurios tiesiogiai priklauso aparatinės įrangos apribojimai ir taikymo reikalavimai, o ne modelio reprezentacinė galia."
-
-### 3.6 Top-1 Classification Metrics for Retrieval Evaluation
-
-Kadangi retrieval pipeline vis dar grąžina kandidatų sąrašą, klasifikacinės metrikos skaičiuojamos tik pagal **top-1** prognozę.
-
-- **recall@k** atsako, ar teisinga klasė pateko į pirmus $k$ kandidatų sąrašą.
-- **precision** atsako, kiek dažnai prognozuota klasė iš tikrųjų yra teisinga.
-- **recall** atsako, kiek tikrų tam tikros klasės pavyzdžių buvo rasta.
-- **F1** balansuoja precision ir recall, todėl yra naudinga kai svarbu ir tikslumas, ir pilnumas.
-
-**Thesis statement:** "Top-k candidate retrieval vertinama naudojant recall@k, o klasifikacinės metrikos (precision, recall, F1 ir confusion matrix) skaičiuojamos tik pagal top-1 prognozuotą klasę. Tai leidžia atskirti kandidatų paieškos kokybę nuo galutinio klasifikavimo sprendimo kokybės."
-
-## 4. Experimental Results
-
-### Results Summary
-{results_table}
-
-### Selected Best Configuration
-
-**Configuration:** `{best_result.name if best_result else 'None'}`
-
-**Justification:** {best_justification if best_result else 'No successful runs.'}
-
-## 5. Validation Methodology
-
-All experiments use **5-fold stratified cross-validation** on the development set (TRAIN+VAL split combined). Each fold:
-- Splits development data into training (4 folds) and validation (1 fold).
-- Trains a new model from scratch with the variant hyperparameters.
-- Monitors `val_logits_top1` accuracy; EarlyStopping stops if no improvement for 6 epochs.
-- Evaluates on the held-out validation fold using centroid-based retrieval.
-- Records recall@1, recall@3, recall@5 with mean and standard deviation across folds.
-
-This ensures robustness and reduces variance due to random train/val split.
-
-## 6. Limitations and Honest Assessment
-
-1. **Limited search space:** Only 8 configurations tested (1 baseline + 7 one-factor ablations). Full grid search (all combinations) would be computationally prohibitive and is not necessary for thesis evidence.
-
-2. **No probabilistic optimization:** This is not a Bayesian optimization or random search that theoretically explores high-dimensional space. It is targeted ablation of key parameters based on domain knowledge and common practice.
-
-3. **No guarantee of global optimum:** The selected configuration is the best among tested variants, NOT necessarily globally optimal across all possible hyperparameter combinations.
-
-4. **Architecture choices are fixed:** MobileNetV3Small backbone, batch_hard_triplet_loss, L2 normalization, and dual-head (embedding + logits) architecture are treated as fixed architectural choices, not optimized parameters. These reflect state-of-the-art metric learning practices and are justified separately.
-
-5. **Cross-validation variance:** Results have error bars (std across folds) which reflect natural variance in k-fold CV. Statistical significance is not formally tested; instead, results are interpreted with variance context.
-
-## 7. Thesis-Safe Summary (Lithuanian)
-
-Atliktas ribotas abliacijos eksperimentas, kurio tikslas – pateikti empirinį patvirtinimą, kad svarbiausieji mokymo parametrai buvo sistemingai išbandyti.
-
-**Optimalumas** šiame kontekste reiškia geriausią rezultatą tarp patikrintų konfigūracijų, o ne globalią visų kombinacijų paieską.
-
-Pagrindinės parametrinės prielaidos:
-- **Seed (=42)** naudotas atkartojamumui, o ne rezultatams optimizuoti.
-- **Epochų skaičius (max=32)** apibrėžtas kaip maksimali mokymo riba; geriausios svorio pasirinktos per EarlyStopping.
-- **Adam optimizatorius** nėra hiperparametrų paieška, o adaptyvus gradientų metodas su fiksuotu learning rate parametru.
-- **Vidinės validacijos santykis (10%)** yra mokymo protokolo pasirinkimas, o ne optimizuojamas parametras.
-
-Konkretus abliacijos testas izoliavo individualių parametrų poveikį: embedding dimensionalumo (128, 256, 512), learning rate (1e-3, 3e-4), triplet margin (0.2, 0.3), dropout (0.2, 0.3), ir ribotą aparatinės jautruminę analizę (batch_size, img_size).
-
-Pilna visų kombinacijų paieška neatlikta dėl skaičiavimo sąnaudų ir laiko apribojimų. Vietoj to, šis metodas pateikia praktinius, patikrinus empirinį patvirtinimą, kuris yra pakankamas moksliniam darbui.
-
-## 8. Recommended Thesis Wording
-
-**English:**
-"To provide empirical evidence that important training hyperparameters were evaluated, a one-factor-at-a-time ablation study was conducted. The model was trained under eight configurations: one baseline and seven single-parameter variants. Each variant was evaluated using 5-fold stratified cross-validation. The configuration achieving the highest recall@1 (primary metric) was selected. While this approach does not perform exhaustive grid search across all parameter combinations, it provides clear evidence of systematic empirical parameter evaluation."
-
-**Lithuanian:**
-"Norėdami pateikti empirinį patvirtinimą, kad svarbieji mokymo hiperparametrai buvo sistemingai išbandyti, atliktas vieno-faktoriaus-iš-karto abliacijos eksperimentas. Modelis buvo mokytas aštuomis konfigūracijomis: viena bazinė ir septyni vieno parametro variantai. Kiekvienas variantas buvo įvertintas naudojant 5-fold stratifikuotą kryžminio patvirtinimo metodą. Pasirinkta konfigūracija, kuri pasiekė aukščiausią recall@1 (pirminė metrika). Nors šis metodas neatlieka išsamios tinklelio paieškos visose parametrų kombinacijose, jis pateikia aiškų sisteminės empirinės parametrų įvertinimo patvirtinimą."
-
----
-
-*Ablation study completed: {len([r for r in results if r.success])} / {len(results)} configurations successful.*
-"""
-
-    md_path.write_text(markdown_content, encoding="utf-8")
-    print(f"Wrote parameter justification to: {md_path}")
+        print(f"[ablation] best: {best_config_path}")
 
 
 def main() -> None:
@@ -825,7 +608,6 @@ def main() -> None:
         print(f"Error: Folds CSV not found: {args.folds_csv}")
         sys.exit(1)
 
-    # Select configs based on --quick flag without mutating global defaults.
     configs_to_run = build_configs(quick=args.quick, epochs=args.epochs, quick_epochs=args.quick_epochs)
 
     fold_limit = args.quick_folds if args.quick else args.folds
@@ -844,26 +626,18 @@ def main() -> None:
         dry_run=args.dry_run,
     )
 
-    print(f"\n{'='*80}")
-    print(f"Retrieval Ablation Experiment")
-    print(f"{'='*80}")
-    print(f"Output root: {output_root}")
-    print(f"Configurations to run: {len(configs_to_run)}")
-    print(f"Fold limit: {fold_limit}")
-    print(f"Timeout hours: {args.timeout_hours}")
-    print(f"Dry-run: {args.dry_run}")
-    print(f"Quick mode: {args.quick}")
-    print(f"{'='*80}\n")
+    print(f"\n[ablation] start")
+    print(f"[ablation] out: {output_root}")
+    print(f"[ablation] configs: {len(configs_to_run)} folds={fold_limit} timeout_h={args.timeout_hours} quick={args.quick} dry={args.dry_run}\n")
 
     results: list[ExperimentResult] = []
 
     for config in configs_to_run:
         config_output_dir = output_root / config["name"]
 
-        # Check if should skip
         existing_metrics = existing_run_metrics(config_output_dir) if args.skip_existing and config_output_dir.exists() else None
         if existing_metrics is not None:
-            print(f"Skipping {config['name']} (output dir exists).")
+            print(f"[ablation] skip: {config['name']}")
             result = ExperimentResult(
                 name=config["name"],
                 description=config["description"],
@@ -893,7 +667,7 @@ def main() -> None:
             results.append(result)
             continue
 
-        # Run CV for this config
+        # Paleidziam CV sitai konfiguracijai
         success, error_msg = run_cv_for_config(
             config=config,
             output_dir=config_output_dir,
@@ -903,7 +677,7 @@ def main() -> None:
             dry_run=args.dry_run,
         )
 
-        # Extract metrics
+        # Isgaunam metrikas
         cv_summary_path = config_output_dir / "cv_summary.json"
         if success and not args.dry_run:
             metrics = extract_cv_metrics(cv_summary_path)
@@ -929,10 +703,9 @@ def main() -> None:
                 "weighted_f1_std": None,
             }
 
-        # Debug print of extracted metrics (always safe)
-        print(f"Metrics extracted: {metrics}")
+        print(f"[ablation] metrics: {metrics}")
 
-        # If training reported success but we couldn't extract metrics, mark as failed but continue
+        # Jei training reportina sekme bet nepavyksta isgauti metriku, laikom kaip nesekme, bet tesiam toliau su kitais testais
         if success and not args.dry_run:
             if (
                 metrics["recall_at_1_mean"] is None
@@ -940,7 +713,7 @@ def main() -> None:
                 or metrics["recall_at_5_mean"] is None
             ):
                 msg = "metrics extraction failed"
-                print(f"Warning: {config['name']} completed but {msg}.")
+                print(f"[ablation] warn: {config['name']} {msg}")
                 success = False
                 if error_msg:
                     error_msg = f"{error_msg}; {msg}"
@@ -976,21 +749,16 @@ def main() -> None:
         )
         results.append(result)
 
-    # Write results and documentation
+    # Raso rezultatus ir suvestine
     if not args.dry_run:
         write_results(results, output_root)
-        write_parameter_justification(results, output_root)
 
         best_result, _ = select_best_config(results)
         if best_result:
-            print(f"\n{'='*80}")
-            print(f"Best configuration: {best_result.name}")
-            print(f"Recall@1: {best_result.recall_at_1_mean:.4f}±{best_result.recall_at_1_std:.4f}")
-            print(f"Recall@3: {best_result.recall_at_3_mean:.4f}±{best_result.recall_at_3_std:.4f}")
-            print(f"Recall@5: {best_result.recall_at_5_mean:.4f}±{best_result.recall_at_5_std:.4f}")
-            print(f"{'='*80}\n")
+            print(f"\n[ablation] best: {best_result.name}")
+            print(f"[ablation] r1={best_result.recall_at_1_mean:.4f} r3={best_result.recall_at_3_mean:.4f} r5={best_result.recall_at_5_mean:.4f}\n")
 
-    print("Done.")
+    print("[ablation] done")
 
 
 if __name__ == "__main__":

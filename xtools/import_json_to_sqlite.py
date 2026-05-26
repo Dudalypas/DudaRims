@@ -7,9 +7,9 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_CARS_JSON = "C:/Users/vilja/flutter_bandymas/assets/data/skoda_models.json"
-DEFAULT_WHEELS_JSON = "C:/Users/vilja/flutter_bandymas/assets/data/wheels.json"
-DEFAULT_DB_PATH = "C:/Users/vilja/flutter_bandymas/assets/data/fitment.sqlite3"
+DEFAULT_CARS_JSON = PROJECT_ROOT / "assets" / "data" / "skoda_models.json"
+DEFAULT_WHEELS_JSON = PROJECT_ROOT / "assets" / "data" / "wheels.json"
+DEFAULT_DB_PATH = PROJECT_ROOT / "assets" / "data" / "fitment.sqlite3"
 
 
 CAR_FIELDS = [
@@ -29,14 +29,10 @@ CAR_FIELDS = [
     "width_max_j",
     "et_min",
     "et_max",
-    "notes",
-    "source_type",
-    "source_page",
-    "extraction_confidence",
+    "review_reason",
     "needs_manual_review",
 ]
 
-# Intentionally excludes generation/year_from/year_to for wheels.
 WHEEL_FIELDS = [
     "wheel_class_name",
     "official_wheel_name",
@@ -50,25 +46,20 @@ WHEEL_FIELDS = [
     "bolt_count",
     "designed_for_models",
     "oem_part_code",
-    "notes",
-    "source_type",
-    "source_page",
-    "extraction_confidence",
+    "review_reason",
     "needs_manual_review",
 ]
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Import skoda_models.json and wheels.json into SQLite."
-    )
+    parser = argparse.ArgumentParser(description="Import JSON files into SQLite")
     parser.add_argument("--cars-json", type=Path, default=DEFAULT_CARS_JSON)
     parser.add_argument("--wheels-json", type=Path, default=DEFAULT_WHEELS_JSON)
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument(
         "--append",
         action="store_true",
-        help="Append to existing rows. By default existing table rows are replaced.",
+        help="Append rows instead of replacing tables",
     )
     return parser.parse_args()
 
@@ -110,9 +101,13 @@ def to_text(value: Any) -> str | None:
 def to_float(value: Any) -> float | None:
     if value is None:
         return None
+    if isinstance(value, float) and value != value:
+        return None
     if isinstance(value, bool):
         return float(int(value))
     if isinstance(value, (int, float)):
+        if value != value:
+            return None
         return float(value)
     text = str(value).strip().replace(",", ".")
     if text == "":
@@ -126,11 +121,15 @@ def to_float(value: Any) -> float | None:
 def to_int(value: Any) -> int | None:
     if value is None:
         return None
+    if isinstance(value, float) and value != value:
+        return None
     if isinstance(value, bool):
         return int(value)
     if isinstance(value, int):
         return value
     if isinstance(value, float):
+        if value != value:
+            return None
         return int(round(value))
     text = str(value).strip()
     if text == "":
@@ -144,21 +143,21 @@ def to_int(value: Any) -> int | None:
             return None
 
 
-def to_bool_int(value: Any) -> int | None:
+def to_bool_int(value: Any) -> int:
     if value is None:
-        return None
+        return 0
     if isinstance(value, bool):
         return 1 if value else 0
     if isinstance(value, (int, float)):
         return 0 if float(value) == 0 else 1
     text = str(value).strip().lower()
     if text in {"", "none", "null"}:
-        return None
+        return 0
     if text in {"1", "true", "yes", "y"}:
         return 1
     if text in {"0", "false", "no", "n"}:
         return 0
-    return None
+    return 0
 
 
 def normalize_car_row(row: dict[str, Any]) -> tuple[Any, ...]:
@@ -179,10 +178,7 @@ def normalize_car_row(row: dict[str, Any]) -> tuple[Any, ...]:
         to_float(row.get("width_max_j")),
         to_float(row.get("et_min")),
         to_float(row.get("et_max")),
-        to_text(row.get("notes")),
-        to_text(row.get("source_type")),
-        to_text(row.get("source_page")),
-        to_float(row.get("extraction_confidence")),
+        to_text(row.get("review_reason")),
         to_bool_int(row.get("needs_manual_review")),
     )
 
@@ -201,10 +197,7 @@ def normalize_wheel_row(row: dict[str, Any]) -> tuple[Any, ...]:
         to_int(row.get("bolt_count")),
         to_text(row.get("designed_for_models")),
         to_text(row.get("oem_part_code")),
-        to_text(row.get("notes")),
-        to_text(row.get("source_type")),
-        to_text(row.get("source_page")),
-        to_float(row.get("extraction_confidence")),
+        to_text(row.get("review_reason")),
         to_bool_int(row.get("needs_manual_review")),
     )
 
@@ -213,7 +206,6 @@ def create_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS car_models (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
             brand TEXT,
             model TEXT,
             generation TEXT,
@@ -230,11 +222,8 @@ def create_schema(conn: sqlite3.Connection) -> None:
             width_max_j REAL,
             et_min REAL,
             et_max REAL,
-            notes TEXT,
-            source_type TEXT,
-            source_page TEXT,
-            extraction_confidence REAL,
-            needs_manual_review INTEGER
+            review_reason TEXT,
+            needs_manual_review INTEGER CHECK (needs_manual_review IN (0, 1))
         )
         """
     )
@@ -242,7 +231,6 @@ def create_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS wheel_models (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
             wheel_class_name TEXT,
             official_wheel_name TEXT,
             brand TEXT,
@@ -255,11 +243,8 @@ def create_schema(conn: sqlite3.Connection) -> None:
             bolt_count INTEGER,
             designed_for_models TEXT,
             oem_part_code TEXT,
-            notes TEXT,
-            source_type TEXT,
-            source_page TEXT,
-            extraction_confidence REAL,
-            needs_manual_review INTEGER
+            review_reason TEXT,
+            needs_manual_review INTEGER CHECK (needs_manual_review IN (0, 1))
         )
         """
     )
@@ -271,6 +256,21 @@ def create_schema(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_wheel_models_class_name ON wheel_models(wheel_class_name)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_wheel_models_brand ON wheel_models(brand)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_wheel_models_pcd ON wheel_models(pcd)")
+
+
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> list[str]:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return [str(row[1]) for row in rows]
+
+
+def validate_schema(conn: sqlite3.Connection) -> None:
+    car_columns = _table_columns(conn, "car_models")
+    wheel_columns = _table_columns(conn, "wheel_models")
+
+    if car_columns != CAR_FIELDS:
+        raise RuntimeError(f"car_models schema mismatch. Expected {CAR_FIELDS}, got {car_columns}")
+    if wheel_columns != WHEEL_FIELDS:
+        raise RuntimeError(f"wheel_models schema mismatch. Expected {WHEEL_FIELDS}, got {wheel_columns}")
 
 
 def insert_rows(
@@ -292,14 +292,12 @@ def insert_rows(
             brand, model, generation, year_from, year_to,
             pcd, cb, bolt_count, thread_size, center_bore_mm,
             diameter_min_in, diameter_max_in, width_min_j, width_max_j,
-            et_min, et_max, notes, source_type, source_page,
-            extraction_confidence, needs_manual_review
+            et_min, et_max, review_reason, needs_manual_review
         ) VALUES (
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
-            ?, ?, ?, ?, ?,
-            ?, ?
+            ?, ?, ?, ?
         )
         """,
         car_values,
@@ -310,12 +308,10 @@ def insert_rows(
         INSERT INTO wheel_models (
             wheel_class_name, official_wheel_name, brand, color_variant,
             diameter_in, width_j, et, pcd, cb, bolt_count,
-            designed_for_models, oem_part_code, notes,
-            source_type, source_page, extraction_confidence, needs_manual_review
+            designed_for_models, oem_part_code, review_reason, needs_manual_review
         ) VALUES (
             ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?,
-            ?, ?, ?,
             ?, ?, ?, ?
         )
         """,
@@ -334,13 +330,17 @@ def main() -> None:
     args.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     with sqlite3.connect(args.db_path) as conn:
+        if not args.append:
+            conn.execute("DROP TABLE IF EXISTS car_models")
+            conn.execute("DROP TABLE IF EXISTS wheel_models")
         create_schema(conn)
+        validate_schema(conn)
         car_count, wheel_count = insert_rows(conn, cars, wheels, append=args.append)
         conn.commit()
 
-    print(f"SQLite DB: {args.db_path}")
-    print(f"Imported car_models rows: {car_count}")
-    print(f"Imported wheel_models rows: {wheel_count}")
+    print(f"[sqlite] db: {args.db_path}")
+    print(f"[sqlite] car_models: {car_count}")
+    print(f"[sqlite] wheel_models: {wheel_count}")
 
 
 if __name__ == "__main__":

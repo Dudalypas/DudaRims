@@ -1,0 +1,14 @@
+appId: com.example.dudarims
+---
+- launchApp:
+    clearState: true
+
+- tapOn: "Pasirinkti automobilį"
+- assertVisible: "Pasirinkite automobilio modelį"
+- tapOn: "Pasirinkite automobilio modelį"
+- tapOn: "Fabia"
+- assertVisible: "Fabia"
+- tapOn: "Pasirinkite kartą"
+- tapOn: "Mk1 (6Y) (1999-2007)"
+- assertVisible: "Fabia"
+- assertVisible: "Mk1 (6Y) (1999-2007)"

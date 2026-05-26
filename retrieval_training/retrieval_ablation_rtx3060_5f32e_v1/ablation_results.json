@@ -1,0 +1,518 @@
+{
+  "experiment": "retrieval_ablation_v1",
+  "date": "1777826394.8051784",
+  "results": [
+    {
+      "name": "baseline",
+      "description": "Baseline: embedding_dim=256, lr=1e-3, triplet_margin=0.2, dropout=0.2",
+      "config": {
+        "name": "baseline",
+        "description": "Baseline: embedding_dim=256, lr=1e-3, triplet_margin=0.2, dropout=0.2",
+        "img_size": 224,
+        "batch_size": 32,
+        "epochs": 32,
+        "seed": 42,
+        "early_stopping_patience": 5,
+        "embedding_dim": 256,
+        "learning_rate": 0.001,
+        "triplet_margin": 0.2,
+        "triplet_weight": 0.5,
+        "ce_weight": 1.0,
+        "dropout": 0.2,
+        "reference_mode": "limited",
+        "max_refs_per_class": 20,
+        "retrieval_mode": "centroid",
+        "topn": 1
+      },
+      "success": true,
+      "metrics": {
+        "recall@1": {
+          "mean": 0.882624364653657,
+          "std": 0.020401085288893676
+        },
+        "recall@3": {
+          "mean": 0.9714237591257827,
+          "std": 0.0069576748418352825
+        },
+        "recall@5": {
+          "mean": 0.9911274059364888,
+          "std": 0.0008300863379284408
+        },
+        "macro_precision": {
+          "mean": 0.8838570563468998,
+          "std": 0.02079521491905384
+        },
+        "macro_recall": {
+          "mean": 0.874958379558629,
+          "std": 0.01985103983108957
+        },
+        "macro_f1": {
+          "mean": 0.8769147117230285,
+          "std": 0.020772510723248375
+        },
+        "weighted_precision": {
+          "mean": 0.8867961042958837,
+          "std": 0.019371756140286297
+        },
+        "weighted_recall": {
+          "mean": 0.882624364653657,
+          "std": 0.020401085288893676
+        },
+        "weighted_f1": {
+          "mean": 0.8823915018964005,
+          "std": 0.020670391019207816
+        }
+      },
+      "error_msg": null,
+      "cv_summary_path": "trained_cropped_classifier/retrieval_ablation_rtx3060_5f32e_v1/baseline/cv_summary.json"
+    },
+    {
+      "name": "embedding_dim_128",
+      "description": "Ablation: embedding_dim=128 (smaller)",
+      "config": {
+        "name": "embedding_dim_128",
+        "description": "Ablation: embedding_dim=128 (smaller)",
+        "img_size": 224,
+        "batch_size": 32,
+        "epochs": 32,
+        "seed": 42,
+        "early_stopping_patience": 5,
+        "embedding_dim": 128,
+        "learning_rate": 0.001,
+        "triplet_margin": 0.2,
+        "triplet_weight": 0.5,
+        "ce_weight": 1.0,
+        "dropout": 0.2,
+        "reference_mode": "limited",
+        "max_refs_per_class": 20,
+        "retrieval_mode": "centroid",
+        "topn": 1
+      },
+      "success": true,
+      "metrics": {
+        "recall@1": {
+          "mean": 0.8918403700101359,
+          "std": 0.017311106038335897
+        },
+        "recall@3": {
+          "mean": 0.9740526577726826,
+          "std": 0.005638499975975565
+        },
+        "recall@5": {
+          "mean": 0.9894862901608483,
+          "std": 0.001683733691508375
+        },
+        "macro_precision": {
+          "mean": 0.8919132248161237,
+          "std": 0.018734877662029154
+        },
+        "macro_recall": {
+          "mean": 0.8847508556417271,
+          "std": 0.016400250289176025
+        },
+        "macro_f1": {
+          "mean": 0.8864669388722766,
+          "std": 0.017704786888595975
+        },
+        "weighted_precision": {
+          "mean": 0.894939172244572,
+          "std": 0.01697416618121803
+        },
+        "weighted_recall": {
+          "mean": 0.8918403700101359,
+          "std": 0.017311106038335897
+        },
+        "weighted_f1": {
+          "mean": 0.8916664724100187,
+          "std": 0.0174560382879375
+        }
+      },
+      "error_msg": null,
+      "cv_summary_path": "trained_cropped_classifier/retrieval_ablation_rtx3060_5f32e_v1/embedding_dim_128/cv_summary.json"
+    },
+    {
+      "name": "embedding_dim_512",
+      "description": "Ablation: embedding_dim=512 (larger)",
+      "config": {
+        "name": "embedding_dim_512",
+        "description": "Ablation: embedding_dim=512 (larger)",
+        "img_size": 224,
+        "batch_size": 32,
+        "epochs": 32,
+        "seed": 42,
+        "early_stopping_patience": 5,
+        "embedding_dim": 512,
+        "learning_rate": 0.001,
+        "triplet_margin": 0.2,
+        "triplet_weight": 0.5,
+        "ce_weight": 1.0,
+        "dropout": 0.2,
+        "reference_mode": "limited",
+        "max_refs_per_class": 20,
+        "retrieval_mode": "centroid",
+        "topn": 1
+      },
+      "success": true,
+      "metrics": {
+        "recall@1": {
+          "mean": 0.8855968571048105,
+          "std": 0.018335141096325377
+        },
+        "recall@3": {
+          "mean": 0.9743817167309764,
+          "std": 0.006465971330885121
+        },
+        "recall@5": {
+          "mean": 0.9901356325540522,
+          "std": 0.0015202843734450611
+        },
+        "macro_precision": {
+          "mean": 0.8871771667232611,
+          "std": 0.018253394663859925
+        },
+        "macro_recall": {
+          "mean": 0.8789659656834864,
+          "std": 0.018657855613078735
+        },
+        "macro_f1": {
+          "mean": 0.8806591881419672,
+          "std": 0.01888553352710943
+        },
+        "weighted_precision": {
+          "mean": 0.8893610436441662,
+          "std": 0.01744802451730031
+        },
+        "weighted_recall": {
+          "mean": 0.8855968571048105,
+          "std": 0.018335141096325377
+        },
+        "weighted_f1": {
+          "mean": 0.885250155308192,
+          "std": 0.018638708718224047
+        }
+      },
+      "error_msg": null,
+      "cv_summary_path": "trained_cropped_classifier/retrieval_ablation_rtx3060_5f32e_v1/embedding_dim_512/cv_summary.json"
+    },
+    {
+      "name": "learning_rate_3e4",
+      "description": "Ablation: learning_rate=3e-4 (slower)",
+      "config": {
+        "name": "learning_rate_3e4",
+        "description": "Ablation: learning_rate=3e-4 (slower)",
+        "img_size": 224,
+        "batch_size": 32,
+        "epochs": 32,
+        "seed": 42,
+        "early_stopping_patience": 5,
+        "embedding_dim": 256,
+        "learning_rate": 0.0003,
+        "triplet_margin": 0.2,
+        "triplet_weight": 0.5,
+        "ce_weight": 1.0,
+        "dropout": 0.2,
+        "reference_mode": "limited",
+        "max_refs_per_class": 20,
+        "retrieval_mode": "centroid",
+        "topn": 1
+      },
+      "success": true,
+      "metrics": {
+        "recall@1": {
+          "mean": 0.8793765243274375,
+          "std": 0.01330652975056455
+        },
+        "recall@3": {
+          "mean": 0.9700813879290535,
+          "std": 0.008649317293919356
+        },
+        "recall@5": {
+          "mean": 0.990814147994145,
+          "std": 0.002193839593093096
+        },
+        "macro_precision": {
+          "mean": 0.8808155503287018,
+          "std": 0.013295525554062836
+        },
+        "macro_recall": {
+          "mean": 0.8706827483824966,
+          "std": 0.013208675767606573
+        },
+        "macro_f1": {
+          "mean": 0.8730154917369116,
+          "std": 0.013685605947592149
+        },
+        "weighted_precision": {
+          "mean": 0.8842982649177598,
+          "std": 0.011828318689357952
+        },
+        "weighted_recall": {
+          "mean": 0.8793765243274375,
+          "std": 0.01330652975056455
+        },
+        "weighted_f1": {
+          "mean": 0.8792210398726997,
+          "std": 0.013598940980626969
+        }
+      },
+      "error_msg": null,
+      "cv_summary_path": "trained_cropped_classifier/retrieval_ablation_rtx3060_5f32e_v1/learning_rate_3e4/cv_summary.json"
+    },
+    {
+      "name": "triplet_margin_03",
+      "description": "Ablation: triplet_margin=0.3 (larger margin)",
+      "config": {
+        "name": "triplet_margin_03",
+        "description": "Ablation: triplet_margin=0.3 (larger margin)",
+        "img_size": 224,
+        "batch_size": 32,
+        "epochs": 32,
+        "seed": 42,
+        "early_stopping_patience": 5,
+        "embedding_dim": 256,
+        "learning_rate": 0.001,
+        "triplet_margin": 0.3,
+        "triplet_weight": 0.5,
+        "ce_weight": 1.0,
+        "dropout": 0.2,
+        "reference_mode": "limited",
+        "max_refs_per_class": 20,
+        "retrieval_mode": "centroid",
+        "topn": 1
+      },
+      "success": true,
+      "metrics": {
+        "recall@1": {
+          "mean": 0.8845954587261182,
+          "std": 0.020217354161624033
+        },
+        "recall@3": {
+          "mean": 0.9720784253638627,
+          "std": 0.006683035032066315
+        },
+        "recall@5": {
+          "mean": 0.9914542033221098,
+          "std": 0.0012551828465363374
+        },
+        "macro_precision": {
+          "mean": 0.8856533603259449,
+          "std": 0.020650838034782765
+        },
+        "macro_recall": {
+          "mean": 0.877343734517711,
+          "std": 0.019483567699249662
+        },
+        "macro_f1": {
+          "mean": 0.8790437163038026,
+          "std": 0.020482567420597696
+        },
+        "weighted_precision": {
+          "mean": 0.8886111032946605,
+          "std": 0.01950663351751146
+        },
+        "weighted_recall": {
+          "mean": 0.8845954587261182,
+          "std": 0.020217354161624033
+        },
+        "weighted_f1": {
+          "mean": 0.8843285771116971,
+          "std": 0.020623773255729845
+        }
+      },
+      "error_msg": null,
+      "cv_summary_path": "trained_cropped_classifier/retrieval_ablation_rtx3060_5f32e_v1/triplet_margin_03/cv_summary.json"
+    },
+    {
+      "name": "dropout_03",
+      "description": "Ablation: dropout=0.3 (more regularization)",
+      "config": {
+        "name": "dropout_03",
+        "description": "Ablation: dropout=0.3 (more regularization)",
+        "img_size": 224,
+        "batch_size": 32,
+        "epochs": 32,
+        "seed": 42,
+        "early_stopping_patience": 5,
+        "embedding_dim": 256,
+        "learning_rate": 0.001,
+        "triplet_margin": 0.2,
+        "triplet_weight": 0.5,
+        "ce_weight": 1.0,
+        "dropout": 0.3,
+        "reference_mode": "limited",
+        "max_refs_per_class": 20,
+        "retrieval_mode": "centroid",
+        "topn": 1
+      },
+      "success": true,
+      "metrics": {
+        "recall@1": {
+          "mean": 0.8780084313721142,
+          "std": 0.01714898932534359
+        },
+        "recall@3": {
+          "mean": 0.9717355316061163,
+          "std": 0.008784008680075998
+        },
+        "recall@5": {
+          "mean": 0.9911452738219596,
+          "std": 0.0021808705335473314
+        },
+        "macro_precision": {
+          "mean": 0.8776836533897301,
+          "std": 0.017901481262498076
+        },
+        "macro_recall": {
+          "mean": 0.8697576374143893,
+          "std": 0.01672739610257399
+        },
+        "macro_f1": {
+          "mean": 0.8712549321802969,
+          "std": 0.017846753570790706
+        },
+        "weighted_precision": {
+          "mean": 0.8812898291869027,
+          "std": 0.016848157394587872
+        },
+        "weighted_recall": {
+          "mean": 0.8780084313721142,
+          "std": 0.01714898932534359
+        },
+        "weighted_f1": {
+          "mean": 0.877285794844582,
+          "std": 0.017584795012167923
+        }
+      },
+      "error_msg": null,
+      "cv_summary_path": "trained_cropped_classifier/retrieval_ablation_rtx3060_5f32e_v1/dropout_03/cv_summary.json"
+    },
+    {
+      "name": "batch_size_16",
+      "description": "Ablation: batch_size=16 (smaller batches, sensitivity check)",
+      "config": {
+        "name": "batch_size_16",
+        "description": "Ablation: batch_size=16 (smaller batches, sensitivity check)",
+        "img_size": 224,
+        "batch_size": 16,
+        "epochs": 32,
+        "seed": 42,
+        "early_stopping_patience": 5,
+        "embedding_dim": 256,
+        "learning_rate": 0.001,
+        "triplet_margin": 0.2,
+        "triplet_weight": 0.5,
+        "ce_weight": 1.0,
+        "dropout": 0.2,
+        "reference_mode": "limited",
+        "max_refs_per_class": 20,
+        "retrieval_mode": "centroid",
+        "topn": 1
+      },
+      "success": true,
+      "metrics": {
+        "recall@1": {
+          "mean": 0.8951475561097956,
+          "std": 0.013858526486350503
+        },
+        "recall@3": {
+          "mean": 0.9743509395830803,
+          "std": 0.008905498774888332
+        },
+        "recall@5": {
+          "mean": 0.9908065138032545,
+          "std": 0.0012758163946301065
+        },
+        "macro_precision": {
+          "mean": 0.895544634858951,
+          "std": 0.012285310773023314
+        },
+        "macro_recall": {
+          "mean": 0.8888562146150504,
+          "std": 0.014074576693425307
+        },
+        "macro_f1": {
+          "mean": 0.8902995565728865,
+          "std": 0.013414863932010995
+        },
+        "weighted_precision": {
+          "mean": 0.8981850833961786,
+          "std": 0.012131940937139289
+        },
+        "weighted_recall": {
+          "mean": 0.8951475561097956,
+          "std": 0.013858526486350503
+        },
+        "weighted_f1": {
+          "mean": 0.8949787108814371,
+          "std": 0.013513609173407196
+        }
+      },
+      "error_msg": null,
+      "cv_summary_path": "trained_cropped_classifier/retrieval_ablation_rtx3060_5f32e_v1/batch_size_16/cv_summary.json"
+    },
+    {
+      "name": "img_size_192",
+      "description": "Ablation: img_size=192 (smaller resolution, sensitivity check)",
+      "config": {
+        "name": "img_size_192",
+        "description": "Ablation: img_size=192 (smaller resolution, sensitivity check)",
+        "img_size": 192,
+        "batch_size": 32,
+        "epochs": 32,
+        "seed": 42,
+        "early_stopping_patience": 5,
+        "embedding_dim": 256,
+        "learning_rate": 0.001,
+        "triplet_margin": 0.2,
+        "triplet_weight": 0.5,
+        "ce_weight": 1.0,
+        "dropout": 0.2,
+        "reference_mode": "limited",
+        "max_refs_per_class": 20,
+        "retrieval_mode": "centroid",
+        "topn": 1
+      },
+      "success": true,
+      "metrics": {
+        "recall@1": {
+          "mean": 0.8626583094423845,
+          "std": 0.013457490979505108
+        },
+        "recall@3": {
+          "mean": 0.9687823375306021,
+          "std": 0.008803319650373552
+        },
+        "recall@5": {
+          "mean": 0.9904827541009695,
+          "std": 0.005724359828429936
+        },
+        "macro_precision": {
+          "mean": 0.869647234845899,
+          "std": 0.014378380177850593
+        },
+        "macro_recall": {
+          "mean": 0.8549372805719262,
+          "std": 0.01514128361620615
+        },
+        "macro_f1": {
+          "mean": 0.8579430779989197,
+          "std": 0.015540644467995477
+        },
+        "weighted_precision": {
+          "mean": 0.8680575917023923,
+          "std": 0.013785713283898372
+        },
+        "weighted_recall": {
+          "mean": 0.8626583094423845,
+          "std": 0.013457490979505108
+        },
+        "weighted_f1": {
+          "mean": 0.8613982616331779,
+          "std": 0.01452771367811364
+        }
+      },
+      "error_msg": null,
+      "cv_summary_path": "trained_cropped_classifier/retrieval_ablation_rtx3060_5f32e_v1/img_size_192/cv_summary.json"
+    }
+  ]
+}

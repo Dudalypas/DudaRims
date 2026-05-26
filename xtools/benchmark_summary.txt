@@ -1,9 +1,0 @@
-total_image_count: 152
-class_count: 21
-old_top1_accuracy: 0.250000
-new_top1_accuracy: 0.559211
-old_top3_accuracy: 0.401316
-new_top3_accuracy: 0.815789
-number_improved: 52
-number_worsened: 5
-number_detector_fallbacks: 5

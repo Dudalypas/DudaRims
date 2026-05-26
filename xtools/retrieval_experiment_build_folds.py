@@ -14,20 +14,20 @@ from retrieval_experiment_core import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DATASET_ROOT = Path(r"C:\Users\vilja\Desktop\PROD_cropped")
+DEFAULT_DATASET_ROOT = PROJECT_ROOT / "PROD_cropped"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_experiment_v2" / "folds"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Build stratified 5-fold development splits from TRAIN+VAL while preserving TEST as untouched hold-out."
+            "Build stratified 5 fold development splits from TRAIN+VAL while preserving TEST"
         )
     )
-    parser.add_argument("--dataset-root", type=str, default=str(DEFAULT_DATASET_ROOT))
-    parser.add_argument("--n-folds", type=int, default=5)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--output-dir", type=str, default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument("--dataset-root", type=str, default=str(DEFAULT_DATASET_ROOT), help="Root folder with split data")
+    parser.add_argument("--n-folds", type=int, default=5, help="Number of folds")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--output-dir", type=str, default=str(DEFAULT_OUTPUT_DIR), help="Output directory")
     return parser.parse_args()
 
 
@@ -80,9 +80,9 @@ def main() -> None:
     }
     save_json(summary, output_dir / "folds_summary.json")
 
-    print("Prepared development folds:", dev_csv)
-    print("Prepared test hold-out list:", test_csv)
-    print("Class distribution report:", output_dir / "class_distribution_report.csv")
+    print("[folds] dev:", dev_csv)
+    print("[folds] test:", test_csv)
+    print("[folds] report:", output_dir / "class_distribution_report.csv")
 
 
 if __name__ == "__main__":

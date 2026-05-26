@@ -4,18 +4,19 @@ import argparse
 import json
 import logging
 import re
-import time
+from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse
 
 import pandas as pd
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-LOGGER = logging.getLogger("scrape_skoda_models")
+LOGGER = logging.getLogger("scrape_tirewheelguide_models")
 
 MODEL_SCHEMA = [
     "brand",
@@ -34,32 +35,92 @@ MODEL_SCHEMA = [
     "width_max_j",
     "et_min",
     "et_max",
-    "notes",
-    "source_type",
-    "source_page",
-    "extraction_confidence",
+    "review_reason",
     "needs_manual_review",
 ]
 
-YEAR_RANGE_PATTERN = re.compile(r"(?P<from>19\d{2}|20\d{2})\s*(?:-|to|–|—)\s*(?P<to>19\d{2}|20\d{2}|present)", re.IGNORECASE)
-RANGE_PATTERN = re.compile(r"(?P<low>[+-]?\d+(?:[\.,]\d+)?)\s*(?:-|to|–|—)\s*(?P<high>[+-]?\d+(?:[\.,]\d+)?)")
-RIM_PATTERN = re.compile(
+URL_BRAND_MODEL_YEAR_PATTERN = re.compile(
+    r"/sizes/(?P<brand>[^/]+)/(?P<model>[^/]+)/(?P<year>19\d{2}|20\d{2})/?",
+    re.IGNORECASE,
+)
+YEAR_RANGE_PATTERN = re.compile(r"(?P<from>19\d{2}|20\d{2})\s*(?:-|to|–|—)\s*(?P<to>19\d{2}|20\d{2})", re.IGNORECASE)
+MODIFICATION_HEADER_PATTERN = re.compile(r"^(19\d{2}|20\d{2})\s+([A-Za-z0-9-]+)\s+(.+)$")
+PCD_PATTERN = re.compile(r"\b(?P<bolt>\d+)\s*[xX]\s*(?P<diameter>\d+(?:[\.,]\d+)?)\b")
+CB_PATTERN = re.compile(r"(?P<cb>\d+(?:[\.,]\d+)?)\s*mm\b", re.IGNORECASE)
+THREAD_PATTERN = re.compile(r"\bM\s*(?P<dia>\d+)\s*[xX]\s*(?P<pitch>\d+(?:[\.,]\d+)?)\b", re.IGNORECASE)
+RIM_WIDTH_FIRST_PATTERN = re.compile(
     r"(?P<width>\d+(?:[\.,]\d+)?)\s*J\s*[xX]\s*(?P<diameter>\d+(?:[\.,]\d+)?)\s*(?:ET\s*(?P<et>[+-]?\d+(?:[\.,]\d+)?))?",
     re.IGNORECASE,
 )
-RIM_ROW_FALLBACK_PATTERN = re.compile(
-    r"(?P<width>\d+(?:[\.,]\d+)?)Jx(?P<diameter>\d+)(?:\s*ET(?P<et>[+-]?\d+))?",
+RIM_DIAMETER_FIRST_PATTERN = re.compile(
+    r"(?P<diameter>\d+(?:[\.,]\d+)?)\s*[xX]\s*(?P<width>\d+(?:[\.,]\d+)?)\s*(?:J)?\s*(?:ET\s*(?P<et>[+-]?\d+(?:[\.,]\d+)?))?",
     re.IGNORECASE,
 )
-WHEELSIZE_YEAR_PATH_PATTERN = re.compile(r"(?P<from>19\d{2}|20\d{2})(?:[-_](?P<to>19\d{2}|20\d{2}))?")
-STRICT_PCD_PATTERN = re.compile(r"\b\d+\s*[xX]\s*\d+(?:[\.,]\d+)?\b")
-STRICT_CB_PATTERN = re.compile(r"\b\d+(?:[\.,]\d+)?\b")
-MOUNTING_THREAD_PATTERN = re.compile(r"(\d{2})\s*[xX]\s*(\d+(?:[\.,]\d+)?)")
+
 
 
 def configure_logging(verbose: bool) -> None:
-    level = logging.DEBUG if verbose else logging.INFO
+    level = logging.DEBUG if verbose else logging.WARNING
     logging.basicConfig(level=level, format="%(asctime)s | %(levelname)s | %(message)s")
+
+
+
+def normalize_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    text = str(value).strip()
+    if text.lower() == "nan":
+        return ""
+    return text
+
+
+
+def normalize_space(value: str) -> str:
+    return re.sub(r"\s+", " ", normalize_text(value)).strip()
+
+
+
+def to_float(value: Any) -> float | None:
+    raw = normalize_text(value)
+    if not raw:
+        return None
+    raw = raw.replace(",", ".")
+    match = re.search(r"[+-]?\d+(?:\.\d+)?", raw)
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+
+def to_int(value: Any) -> int | None:
+    val = to_float(value)
+    return int(round(val)) if val is not None else None
+
+
+
+def to_bool_int(value: Any) -> int:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return 0
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if isinstance(value, (int, float)):
+        return 0 if float(value) == 0 else 1
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "taip"}:
+        return 1
+    return 0
+
+
+
+def slug_to_name(value: str) -> str:
+    clean = re.sub(r"[-_]+", " ", normalize_text(value))
+    return normalize_space(clean).title()
+
 
 
 def build_session(user_agent: str, retries: int = 3, backoff_factor: float = 0.5) -> requests.Session:
@@ -80,919 +141,699 @@ def build_session(user_agent: str, retries: int = 3, backoff_factor: float = 0.5
         {
             "User-Agent": user_agent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.8,lt;q=0.6",
-            "Connection": "keep-alive",
+            "Accept-Language": "en-US,en;q=0.9",
         }
     )
     return session
 
 
-def fetch_page(
-    session: requests.Session,
-    url: str,
-    timeout: int,
-    delay_seconds: float,
-    save_raw_html: bool,
-    raw_html_dir: Path,
-) -> str | None:
-    try:
-        response = session.get(url, timeout=timeout)
-        response.raise_for_status()
-        html = response.text
-        if save_raw_html:
-            raw_html_dir.mkdir(parents=True, exist_ok=True)
-            host = re.sub(r"[^A-Za-z0-9._-]+", "_", urlparse(url).netloc)
-            path = re.sub(r"[^A-Za-z0-9._-]+", "_", urlparse(url).path)
-            out_file = raw_html_dir / f"models_{host}_{path}_{int(time.time() * 1000)}.html"
-            out_file.write_text(html, encoding="utf-8")
-        time.sleep(delay_seconds)
-        return html
-    except requests.RequestException as exc:
-        LOGGER.warning("Failed to fetch %s: %s", url, exc)
-        return None
+
+def fetch_html(session: requests.Session, source_url: str, timeout: int) -> str:
+    response = session.get(source_url, timeout=timeout)
+    response.raise_for_status()
+    return response.text
 
 
-def normalize_text(value: Any) -> str:
-    return str(value).strip() if value is not None else ""
+
+def safe_slug(value: str, fallback: str = "page") -> str:
+    text = normalize_space(value).lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    text = text.strip("-")
+    return text or fallback
 
 
-def to_float(value: Any) -> float | None:
-    raw = normalize_text(value)
-    if not raw:
-        return None
-    raw = raw.replace(",", ".")
-    m = re.search(r"[+-]?\d+(?:\.\d+)?", raw)
-    if not m:
-        return None
-    try:
-        return float(m.group(0))
-    except ValueError:
-        return None
+
+def extract_url_slug_parts(source_url: str) -> tuple[str, str]:
+    match = URL_BRAND_MODEL_YEAR_PATTERN.search(urlparse(source_url).path)
+    if not match:
+        return "model", "unknown"
+    model_slug = safe_slug(match.group("model"), fallback="model")
+    year_slug = safe_slug(match.group("year"), fallback="unknown")
+    return model_slug, year_slug
 
 
-def parse_range(value: str) -> tuple[float | None, float | None]:
-    raw = normalize_text(value)
-    if not raw:
-        return None, None
-    match = RANGE_PATTERN.search(raw)
-    if match:
-        return to_float(match.group("low")), to_float(match.group("high"))
-    single = to_float(raw)
-    return single, single
+
+def save_raw_html(raw_html_dir: Path, source_url: str, html: str) -> Path:
+    raw_html_dir.mkdir(parents=True, exist_ok=True)
+    model_slug, year_slug = extract_url_slug_parts(source_url)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    filename = f"{model_slug}_{year_slug}_{timestamp}.html"
+    output_path = raw_html_dir / filename
+    output_path.write_text(html, encoding="utf-8")
+    return output_path
+
+
+
+def load_sources_from_csv(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        raise FileNotFoundError(f"CSV file not found: {path}")
+
+    df = pd.read_csv(path)
+    expected_columns = {"brand", "model", "source_url"}
+    missing = [col for col in expected_columns if col not in df.columns]
+    if missing:
+        raise ValueError(f"Input CSV missing columns: {missing}")
+
+    rows: list[dict[str, str]] = []
+    for _, row in df.iterrows():
+        source_url = normalize_text(row.get("source_url"))
+        if not source_url:
+            continue
+        rows.append(
+            {
+                "brand": normalize_text(row.get("brand")),
+                "model": normalize_text(row.get("model")),
+                "source_url": source_url,
+            }
+        )
+    return rows
+
+
+
+def load_input_rows(source_urls: list[str], pairs_csv: str | None) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for url in source_urls:
+        if url and url.strip():
+            rows.append({"brand": "", "model": "", "source_url": url.strip()})
+    if pairs_csv:
+        rows.extend(load_sources_from_csv(Path(pairs_csv)))
+
+    seen: set[str] = set()
+    dedup: list[dict[str, str]] = []
+    for row in rows:
+        source_url = normalize_text(row.get("source_url"))
+        if not source_url or source_url in seen:
+            continue
+        seen.add(source_url)
+        dedup.append(row)
+    return dedup
+
+
+
+def parse_page_identity(soup: BeautifulSoup, source_url: str) -> tuple[str, str]:
+    canonical_tag = soup.find("link", rel=lambda value: value and "canonical" in str(value).lower())
+    canonical = normalize_text(canonical_tag.get("href")) if canonical_tag else ""
+    canonical = canonical or source_url
+
+    url_match = URL_BRAND_MODEL_YEAR_PATTERN.search(urlparse(canonical).path)
+    brand = slug_to_name(url_match.group("brand")) if url_match else ""
+    model = slug_to_name(url_match.group("model")) if url_match else ""
+
+    return brand, model
+
 
 
 def parse_year_range(value: str) -> tuple[int | None, int | None]:
-    raw = normalize_text(value)
-    if not raw:
-        return None, None
-    match = YEAR_RANGE_PATTERN.search(raw)
+    text = normalize_space(value)
+    match = YEAR_RANGE_PATTERN.search(text)
     if not match:
         return None, None
-    year_from = int(match.group("from"))
-    year_to_raw = match.group("to").lower()
-    year_to = None if year_to_raw == "present" else int(year_to_raw)
-    return year_from, year_to
+    return int(match.group("from")), int(match.group("to"))
+
+
+
+def generation_from_id(heading_id: str) -> str:
+    raw = normalize_text(heading_id)
+    if not raw:
+        return ""
+    parts = [p for p in raw.split("-") if p]
+    while parts and re.fullmatch(r"19\d{2}|20\d{2}", parts[-1]):
+        parts.pop()
+    formatted: list[str] = []
+    for token in parts:
+        if re.fullmatch(r"\d+[A-Za-z]+", token):
+            formatted.append(f"({token.upper()})")
+        elif re.fullmatch(r"[Mm][Kk]\d+", token):
+            formatted.append(token.capitalize())
+        else:
+            formatted.append(token.upper() if len(token) <= 3 else token.capitalize())
+    return normalize_space(" ".join(formatted))
+
+
+
+def parse_generation_header(header_text: str, brand: str, model: str, heading_id: str) -> tuple[str, int | None, int | None] | None:
+    clean = normalize_space(header_text)
+    year_from, year_to = parse_year_range(clean)
+    if year_from is None or year_to is None:
+        return None
+
+    if MODIFICATION_HEADER_PATTERN.match(clean):
+        return None
+
+    if brand and clean.lower().startswith(brand.lower()):
+        clean = normalize_space(clean[len(brand) :])
+    if model and clean.lower().startswith(model.lower()):
+        clean = normalize_space(clean[len(model) :])
+
+    clean = normalize_space(re.sub(r"\b(19\d{2}|20\d{2})\s*(?:-|to|–|—)\s*(19\d{2}|20\d{2})\b", "", clean, flags=re.IGNORECASE))
+    if not clean:
+        clean = generation_from_id(heading_id)
+
+    return normalize_space(clean), year_from, year_to
+
 
 
 def normalize_pcd(value: str | None) -> str | None:
-    if not value:
+    raw = normalize_text(value)
+    if not raw:
         return None
-    m = STRICT_PCD_PATTERN.search(value)
-    if not m:
+    match = PCD_PATTERN.search(raw)
+    if not match:
         return None
-    raw = m.group(0).replace(" ", "")
-    left, right = raw.lower().split("x", 1)
-    right = right.replace(",", ".")
-    return f"{int(float(left))}x{right}"
+    bolt = int(match.group("bolt"))
+    diameter = match.group("diameter").replace(",", ".")
+    return f"{bolt}x{diameter}"
 
 
-def derive_bolt_count_from_pcd(pcd: str | None) -> int | None:
+
+def derive_bolt_count(pcd: str | None) -> int | None:
     if not pcd:
         return None
-    m = re.match(r"(\d+)\s*[xX]", pcd)
-    if not m:
+    match = re.match(r"(\d+)\s*[xX]", pcd)
+    return int(match.group(1)) if match else None
+
+
+
+def normalize_thread_size(value: str | None) -> str | None:
+    raw = normalize_text(value)
+    if not raw:
         return None
-    return int(m.group(1))
+    match = THREAD_PATTERN.search(raw)
+    if not match:
+        return None
+    dia = match.group("dia")
+    pitch = match.group("pitch").replace(",", ".")
+    return f"M{dia} x {pitch}"
 
 
-def prettify_slug(value: str) -> str:
-    clean = re.sub(r"[-_]+", " ", value.strip())
-    clean = re.sub(r"\s+", " ", clean)
-    return clean.title() if clean else ""
+
+def parse_center_bore(value: str | None) -> float | None:
+    raw = normalize_text(value)
+    if not raw:
+        return None
+    match = CB_PATTERN.search(raw)
+    if not match:
+        return to_float(raw)
+    return to_float(match.group("cb"))
 
 
-def _cleanup_generation_text(raw_generation: str) -> str:
-    generation = raw_generation.strip()
-    generation = re.sub(r"\s*\[\d{4}\s*\.\.\s*\d{4}\]\s*$", "", generation).strip()
-    generation = re.sub(r"\s+(Europe|EU|EUDM|USDM|UK|Asia|Australia|Worldwide)\s*$", "", generation, flags=re.IGNORECASE).strip()
-    return generation
+
+def parse_modification_name(mod_header_text: str, brand: str, model: str) -> str:
+    text = normalize_space(mod_header_text)
+    pattern = re.compile(rf"^(19\d{{2}}|20\d{{2}})\s+{re.escape(brand)}\s+{re.escape(model)}\s+", re.IGNORECASE)
+    return normalize_space(pattern.sub("", text))
 
 
-def _humanize_generation_slug(generation_slug: str) -> str:
-    tokens = [t for t in generation_slug.split("-") if t]
-    if not tokens:
-        return ""
 
-    parts: list[str] = []
-    for token in tokens:
-        low = token.lower()
-        if re.fullmatch(r"mk\d+", low):
-            parts.append(low.capitalize())
-            continue
-        if re.fullmatch(r"[a-z]\d+", low):
-            parts.append(low.upper())
-            continue
-        if re.fullmatch(r"\d+[a-z]+", low):
-            parts.append(f"({low.upper()})")
-            continue
-        parts.append(token.upper() if len(token) <= 3 else token.capitalize())
-
-    return " ".join(parts).strip()
-
-
-def _parse_generation_token(token: str) -> tuple[str | None, int | None, int | None]:
-    clean = unquote(token).strip("/")
-    bits = [b for b in clean.split("-") if b]
-    if len(bits) < 2:
+def parse_rim_spec_values(value: str) -> tuple[float | None, float | None, float | None]:
+    text = normalize_space(value)
+    if not text:
         return None, None, None
 
-    year_from: int | None = None
-    year_to: int | None = None
-    generation_bits = bits[:]
-    if len(bits) >= 2 and re.fullmatch(r"\d{4}", bits[-1]) and re.fullmatch(r"\d{4}", bits[-2]):
-        year_from = int(bits[-2])
-        year_to = int(bits[-1])
-        generation_bits = bits[:-2]
-    elif re.fullmatch(r"\d{4}", bits[-1]):
-        year_from = int(bits[-1])
-        generation_bits = bits[:-1]
+    match = RIM_WIDTH_FIRST_PATTERN.search(text)
+    if match:
+        return to_float(match.group("diameter")), to_float(match.group("width")), to_float(match.group("et"))
 
-    generation = _humanize_generation_slug("-".join(generation_bits)) if generation_bits else None
-    generation = _cleanup_generation_text(generation) if generation else None
-    return generation, year_from, year_to
+    match = RIM_DIAMETER_FIRST_PATTERN.search(text)
+    if match:
+        return to_float(match.group("diameter")), to_float(match.group("width")), to_float(match.group("et"))
+
+    return None, None, None
 
 
-def parse_wheelsize_metadata_from_url(source_page: str) -> dict[str, Any]:
-    parsed = urlparse(source_page)
-    parts = [p for p in parsed.path.split("/") if p]
-    lower_parts = [p.lower() for p in parts]
 
-    model: str | None = None
-    generation: str | None = None
-    year_from: int | None = None
-    year_to: int | None = None
+def extract_rim_cell_candidates(rim_cell: Tag) -> list[str]:
+    candidates: list[str] = []
+    visible = normalize_space(rim_cell.get_text(" ", strip=True))
+    if visible:
+        candidates.append(visible)
 
-    if "skoda" in lower_parts:
-        skoda_idx = lower_parts.index("skoda")
-        trailing = parts[skoda_idx + 1 :]
-        if trailing:
-            model = prettify_slug(unquote(trailing[0])) or None
+    title = normalize_space(rim_cell.get("title"))
+    if title:
+        candidates.append(title)
 
-        for token in trailing[1:]:
-            gen_from_token, year_from_token, year_to_token = _parse_generation_token(token)
-            if gen_from_token and generation is None:
-                generation = gen_from_token
-            if year_from is None and year_from_token is not None:
-                year_from = year_from_token
-            if year_to is None and year_to_token is not None:
-                year_to = year_to_token
-            if generation is not None and year_from is not None:
+    for child in rim_cell.find_all(True):
+        title_value = normalize_space(child.get("title"))
+        if title_value:
+            candidates.append(title_value)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in candidates:
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+
+def parse_rim_table(table: Tag) -> list[dict[str, float | None]]:
+    rows = table.find_all("tr")
+    if not rows:
+        return []
+
+    header_cells = rows[0].find_all(["th", "td"])
+    headers = [normalize_space(cell.get_text(" ", strip=True)).lower() for cell in header_cells]
+    rim_col_idx = None
+    for idx, header in enumerate(headers):
+        if "rim size" in header and "bolt pattern" in header:
+            rim_col_idx = idx
+            break
+    if rim_col_idx is None:
+        return []
+
+    parsed_rows: list[dict[str, float | None]] = []
+    for row in rows[1:]:
+        cells = row.find_all("td")
+        if len(cells) <= rim_col_idx:
+            continue
+        candidates = extract_rim_cell_candidates(cells[rim_col_idx])
+
+        best = (None, None, None)
+        for candidate in candidates:
+            parsed = parse_rim_spec_values(candidate)
+            if parsed[0] is not None and parsed[1] is not None:
+                best = parsed
                 break
 
-            year_match = WHEELSIZE_YEAR_PATH_PATTERN.search(token)
-            if year_match and year_from is None:
-                year_from = int(year_match.group("from"))
-                to_part = year_match.group("to")
-                year_to = int(to_part) if to_part else None
-
-    return {
-        "model": model,
-        "generation": generation,
-        "year_from": year_from,
-        "year_to": year_to,
-    }
-
-
-def parse_wheelsize_generation_from_meta(soup: BeautifulSoup, model: str | None) -> str | None:
-    meta = soup.find("meta", attrs={"property": "car:title"})
-    if not meta:
-        meta = soup.find("meta", attrs={"name": "car:title"})
-    if not meta:
-        return None
-
-    content = normalize_text(meta.get("content"))
-    if not content:
-        return None
-
-    text = content
-    text = re.sub(r"^Skoda\s+", "", text, flags=re.IGNORECASE).strip()
-    if model and text.lower().startswith(model.lower()):
-        text = text[len(model) :].strip()
-
-    generation = _cleanup_generation_text(text)
-    return generation or None
-
-
-def parse_wheelsize_generation_from_header(soup: BeautifulSoup, model: str | None) -> str | None:
-    headers = soup.select("h2[id^='generation-']")
-    for h2 in headers:
-        h2_text = h2.get_text(" ", strip=True)
-        if model and model.lower() not in h2_text.lower():
+        if best[0] is None or best[1] is None:
             continue
 
-        span = h2.find("span")
-        raw_generation = span.get_text(" ", strip=True) if span else h2_text
-        generation = re.sub(r"\s*\[\d{4}\s*\.\.\s*\d{4}\]\s*$", "", raw_generation).strip()
+        parsed_rows.append({"diameter_in": best[0], "width_j": best[1], "et": best[2]})
 
-        if model and generation.lower().startswith(model.lower()):
-            generation = generation[len(model) :].strip()
-        generation = re.sub(r"^Skoda\s+", "", generation, flags=re.IGNORECASE).strip()
-        if generation:
-            return generation
-
-    return None
+    return parsed_rows
 
 
-def parse_rim_value(value: str) -> tuple[float | None, float | None, float | None]:
-    raw = normalize_text(value)
-    if not raw:
-        return None, None, None
-    match = RIM_PATTERN.search(raw)
-    if not match:
-        return None, None, None
-    width = to_float(match.group("width"))
-    diameter = to_float(match.group("diameter"))
-    et = to_float(match.group("et"))
-    return width, diameter, et
 
-
-def parse_rim_value_fallback_from_row_text(value: str) -> tuple[float | None, float | None, float | None]:
-    raw = normalize_text(value)
-    if not raw:
-        return None, None, None
-    match = RIM_ROW_FALLBACK_PATTERN.search(raw)
-    if not match:
-        return None, None, None
-    width = to_float(match.group("width"))
-    diameter = to_float(match.group("diameter"))
-    et = to_float(match.group("et"))
-    return width, diameter, et
-
-
-def parse_tables_with_bs4(soup: BeautifulSoup) -> list[pd.DataFrame]:
-    def normalize_cell_text(text: str) -> str:
-        return re.sub(r"\s+", " ", text.replace("\xa0", " ")).strip()
-
-    def unique_headers(headers: list[str]) -> list[str]:
-        seen: dict[str, int] = {}
-        output: list[str] = []
-        for idx, header in enumerate(headers):
-            base = header or f"col_{idx}"
-            count = seen.get(base, 0)
-            seen[base] = count + 1
-            output.append(base if count == 0 else f"{base}_{count + 1}")
-        return output
-
-    def build_table_grid(table_tag: Any) -> list[list[str]]:
-        tr_nodes = table_tag.find_all("tr")
-        if not tr_nodes:
-            return []
-
-        # Susiskaiciuojam realu max stulpeliu kieki, ivertinant colspan.
-        max_cols = 0
-        for tr in tr_nodes:
-            logical_cols = 0
-            for cell in tr.find_all(["td", "th"]):
-                colspan = int(cell.get("colspan", 1) or 1)
-                logical_cols += max(1, colspan)
-            max_cols = max(max_cols, logical_cols)
-        if max_cols == 0:
-            return []
-
-        grid: list[list[str]] = []
-        # col_idx -> (kiek_eiluciu_liko, reiksme)
-        pending_rowspans: dict[int, tuple[int, str]] = {}
-
-        for tr in tr_nodes:
-            row_values = [""] * max_cols
-
-            # Pries skaitant naujas celes uzpildom reikšmes, kurios tesiasi per rowspan.
-            for col_idx in range(max_cols):
-                if col_idx in pending_rowspans:
-                    rows_left, value = pending_rowspans[col_idx]
-                    row_values[col_idx] = value
-                    if rows_left <= 1:
-                        del pending_rowspans[col_idx]
-                    else:
-                        pending_rowspans[col_idx] = (rows_left - 1, value)
-
-            col_ptr = 0
-            cells = tr.find_all(["td", "th"])
-            for cell in cells:
-                while col_ptr < max_cols and row_values[col_ptr] != "":
-                    col_ptr += 1
-                if col_ptr >= max_cols:
-                    break
-
-                text = normalize_cell_text(cell.get_text(" ", strip=True))
-                colspan = int(cell.get("colspan", 1) or 1)
-                rowspan = int(cell.get("rowspan", 1) or 1)
-
-                span_width = max(1, colspan)
-                span_height = max(1, rowspan)
-                for off in range(span_width):
-                    target = col_ptr + off
-                    if target >= max_cols:
-                        break
-                    row_values[target] = text
-                    if span_height > 1:
-                        pending_rowspans[target] = (span_height - 1, text)
-
-                col_ptr += span_width
-
-            if any(v.strip() for v in row_values):
-                grid.append(row_values)
-
-        return grid
-
-    def pick_header_row(grid: list[list[str]]) -> int | None:
-        best_idx: int | None = None
-        best_score = -1
-        for idx, row in enumerate(grid):
-            low = [str(v).lower() for v in row]
-            score = 0
-            if any("rim" in v for v in low):
-                score += 2
-            if any("tire" in v or "tyre" in v for v in low):
-                score += 2
-            if any("offset" in v for v in low):
-                score += 1
-            if any(v.strip() for v in row):
-                score += 1
-            if score > best_score:
-                best_score = score
-                best_idx = idx
-        if best_idx is None or best_score < 2:
-            return None
-        return best_idx
-
-    tables: list[pd.DataFrame] = []
-    for table in soup.find_all("table"):
-        grid = build_table_grid(table)
-        if not grid:
+def most_common_non_null(values: list[Any]) -> tuple[Any, list[str]]:
+    normalized_values: list[str] = []
+    original_map: dict[str, Any] = {}
+    for value in values:
+        if value is None or (isinstance(value, str) and not value.strip()):
             continue
-
-        header_idx = pick_header_row(grid)
-        if header_idx is None:
+        key = normalize_space(str(value)).lower()
+        if not key:
             continue
+        normalized_values.append(key)
+        original_map.setdefault(key, value)
 
-        headers = unique_headers([normalize_cell_text(x) for x in grid[header_idx]])
+    if not normalized_values:
+        return None, []
 
-        data_rows: list[list[str]] = []
-        for row in grid[header_idx + 1 :]:
-            if len(row) < len(headers):
-                row = row + [""] * (len(headers) - len(row))
-            if len(row) > len(headers):
-                row = row[: len(headers)]
-            if any(str(v).strip() for v in row):
-                data_rows.append([normalize_cell_text(str(v)) for v in row])
-
-        if data_rows:
-            tables.append(pd.DataFrame(data_rows, columns=headers))
-    return tables
+    counts = Counter(normalized_values)
+    winner_key, _ = counts.most_common(1)[0]
+    conflict_values = [str(original_map[k]) for k in counts.keys() if k != winner_key]
+    return original_map[winner_key], sorted(set(conflict_values))
 
 
-def is_usable_wheelsize_table(df: pd.DataFrame) -> bool:
-    if df.empty:
-        return False
-    rim_col = None
-    for col in df.columns:
-        if "rim" in str(col).lower():
-            rim_col = str(col)
+
+def collect_generation_nodes(start_h2: Tag, next_generation_h2: Tag | None) -> list[Tag]:
+    nodes: list[Tag] = []
+    for node in start_h2.find_all_next(True):
+        if next_generation_h2 is not None and node is next_generation_h2:
             break
-    if rim_col is None:
-        return False
-    rim_values = df[rim_col].astype(str).str.strip()
-    non_empty = rim_values[(rim_values != "") & (rim_values.str.lower() != "nan")]
-    return (len(non_empty) / len(df)) >= 0.3 if len(df) else False
+        nodes.append(node)
+    return nodes
 
 
-def parse_wheelsize_ranges(soup: BeautifulSoup, source_page: str) -> dict[str, Any]:
-    rows: list[dict[str, Any]] = []
-    valid_table_count = 0
-    parsed_tables = parse_tables_with_bs4(soup)
-    LOGGER.info("Wheel-Size total HTML tables parsed for %s: %d", source_page, len(parsed_tables))
 
-    # Dedupe darom konservatyviai: dubliu laikom tik tada, kai pilnos normalizuotos parse'inamos eilutes sutampa 1:1.
-    seen_parseable_row_signatures: set[str] = set()
-
-    for table_idx, df in enumerate(parsed_tables, start=1):
-        column_names = [str(c) for c in df.columns]
-        LOGGER.info("Wheel-Size table %d columns: %s", table_idx, column_names)
-
-        normalized_cols = {str(c).lower().strip(): c for c in df.columns}
-
-        def pick(*tokens: str) -> str | None:
-            for low, orig in normalized_cols.items():
-                if all(t in low for t in tokens):
-                    return str(orig)
-            return None
-
-        rim_col = pick("rim")
-        diameter_col = pick("diameter")
-        width_col = pick("width")
-        et_col = pick("et") or pick("offset")
-        offset_range_col = pick("offset", "range")
-
-        if rim_col is None:
-            LOGGER.info("Wheel-Size table %d rejected: missing Rim column", table_idx)
-            continue
-
-        table_rows: list[dict[str, Any]] = []
-        parseable_row_keys: list[str] = []
-        rim_regex_match_count = 0
-        offset_only_count = 0
-        fallback_used = False
-
-        for _, row in df.iterrows():
-            rim_text = normalize_text(row.get(rim_col, ""))
-            w_rim, d_rim, et_rim = parse_rim_value(rim_text)
-
-            # Kartais Rim stulpelis tuscias, bet specai buna kitose celese, tai bandom fallback parse per visa eilute.
-            if d_rim is None and w_rim is None:
-                full_row_text = " ".join(normalize_text(v) for v in row.tolist() if normalize_text(v))
-                w_fb, d_fb, et_fb = parse_rim_value_fallback_from_row_text(full_row_text)
-                if w_fb is not None and d_fb is not None:
-                    w_rim, d_rim, et_rim = w_fb, d_fb, et_fb
-                    fallback_used = True
-
-            diameter_text = normalize_text(row.get(diameter_col, "")) if diameter_col else ""
-            width_text = normalize_text(row.get(width_col, "")) if width_col else ""
-            et_text = normalize_text(row.get(et_col, "")) if et_col else ""
-            offset_range_text = normalize_text(row.get(offset_range_col, "")) if offset_range_col else ""
-
-            d_min, d_max = parse_range(diameter_text)
-            w_min, w_max = parse_range(width_text)
-            et_min, et_max = parse_range(offset_range_text or et_text)
-
-            if d_rim is not None:
-                d_min = d_min if d_min is not None else d_rim
-                d_max = d_max if d_max is not None else d_rim
-            if w_rim is not None:
-                w_min = w_min if w_min is not None else w_rim
-                w_max = w_max if w_max is not None else w_rim
-            if et_rim is not None and et_min is None and et_max is None:
-                et_min = et_rim
-                et_max = et_rim
-
-            # Rim eilute laikom pilnai parse'inta tik kai turim ir width, ir diameter.
-            rim_matched = w_rim is not None and d_rim is not None
-            if rim_matched:
-                rim_regex_match_count += 1
-            elif et_min is not None or et_max is not None:
-                offset_only_count += 1
-
-            if d_min is None and d_max is None and w_min is None and w_max is None and et_min is None and et_max is None:
-                continue
-
-            parsed_row = {
-                "diameter_min_in": d_min,
-                "diameter_max_in": d_max,
-                "width_min_j": w_min,
-                "width_max_j": w_max,
-                "et_min": et_min,
-                "et_max": et_max,
-            }
-            table_rows.append(parsed_row)
-
-            parseable_row_keys.append(
-                "|".join(
-                    [
-                        str(d_min),
-                        str(d_max),
-                        str(w_min),
-                        str(w_max),
-                        str(et_min),
-                        str(et_max),
-                    ]
-                )
-            )
-
-        if not table_rows:
-            LOGGER.info("Wheel-Size table %d rejected: zero parseable rim rows", table_idx)
-            continue
-
-        if rim_regex_match_count == 0:
-            LOGGER.info(
-                "Wheel-Size table %d rejected: no successful rim regex matches (offset_only_rows=%d)",
-                table_idx,
-                offset_only_count,
-            )
-            continue
-
-        dedupe_signature = "\n".join(sorted(parseable_row_keys))
-        if dedupe_signature in seen_parseable_row_signatures:
-            LOGGER.info("Wheel-Size table %d rejected: duplicate parseable rim rows", table_idx)
-            continue
-        seen_parseable_row_signatures.add(dedupe_signature)
-
-        valid_table_count += 1
-        rows.extend(table_rows)
-
-        table_diameters: list[float] = []
-        table_widths: list[float] = []
-        table_et_mins: list[float] = []
-        table_et_maxs: list[float] = []
-        for parsed_row in table_rows:
-            for key in ("diameter_min_in", "diameter_max_in"):
-                value = to_float(parsed_row.get(key))
-                if value is not None:
-                    table_diameters.append(value)
-            for key in ("width_min_j", "width_max_j"):
-                value = to_float(parsed_row.get(key))
-                if value is not None:
-                    table_widths.append(value)
-            vmin = to_float(parsed_row.get("et_min"))
-            vmax = to_float(parsed_row.get("et_max"))
-            if vmin is not None:
-                table_et_mins.append(vmin)
-            if vmax is not None:
-                table_et_maxs.append(vmax)
-
-        LOGGER.info(
-            "Wheel-Size table %d accepted: rim_regex_rows=%d, offset_only_rows=%d, fallback_used=%s, diameter_min_in=%s, diameter_max_in=%s, width_min_j=%s, width_max_j=%s, et_min=%s, et_max=%s",
-            table_idx,
-            rim_regex_match_count,
-            offset_only_count,
-            fallback_used,
-            min(table_diameters) if table_diameters else None,
-            max(table_diameters) if table_diameters else None,
-            min(table_widths) if table_widths else None,
-            max(table_widths) if table_widths else None,
-            min(table_et_mins) if table_et_mins else None,
-            max(table_et_maxs) if table_et_maxs else None,
-        )
-
-    diameters: list[float] = []
-    widths: list[float] = []
-    et_mins: list[float] = []
-    et_maxs: list[float] = []
-    for row in rows:
-        for key in ("diameter_min_in", "diameter_max_in"):
-            v = to_float(row.get(key))
-            if v is not None:
-                diameters.append(v)
-        for key in ("width_min_j", "width_max_j"):
-            v = to_float(row.get(key))
-            if v is not None:
-                widths.append(v)
-        vmin = to_float(row.get("et_min"))
-        vmax = to_float(row.get("et_max"))
-        if vmin is not None:
-            et_mins.append(vmin)
-        if vmax is not None:
-            et_maxs.append(vmax)
-
-    aggregated = {
-        "diameter_min_in": min(diameters) if diameters else None,
-        "diameter_max_in": max(diameters) if diameters else None,
-        "width_min_j": min(widths) if widths else None,
-        "width_max_j": max(widths) if widths else None,
-        "et_min": min(et_mins) if et_mins else None,
-        "et_max": max(et_maxs) if et_maxs else None,
-        "valid_table_count": valid_table_count,
-        "aggregated_from_multiple_variants": valid_table_count > 1,
-        "source_page": source_page,
-    }
-
-    LOGGER.info("Wheel-Size valid tables used for %s: %d", source_page, valid_table_count)
-    LOGGER.info(
-        "Wheel-Size aggregated ranges for %s -> diameter_min_in=%s, diameter_max_in=%s, width_min_j=%s, width_max_j=%s, et_min=%s, et_max=%s",
-        source_page,
-        aggregated["diameter_min_in"],
-        aggregated["diameter_max_in"],
-        aggregated["width_min_j"],
-        aggregated["width_max_j"],
-        aggregated["et_min"],
-        aggregated["et_max"],
+def parse_generation_block(generation_h2: Tag, next_generation_h2: Tag | None, brand: str, model: str) -> dict[str, Any] | None:
+    generation_info = parse_generation_header(
+        header_text=generation_h2.get_text(" ", strip=True),
+        brand=brand,
+        model=model,
+        heading_id=normalize_text(generation_h2.get("id")),
     )
+    if generation_info is None:
+        return None
 
-    return aggregated
+    generation, year_from, year_to = generation_info
+    generation_nodes = collect_generation_nodes(generation_h2, next_generation_h2)
 
+    modifications: list[dict[str, Any]] = []
+    current_mod: dict[str, Any] | None = None
 
-def parse_wheelfitment_page(soup: BeautifulSoup, source_page: str) -> dict[str, Any]:
-    text = "\n".join(line.strip() for line in soup.get_text("\n").splitlines() if line.strip())
-    normalized = re.sub(r"\s+", " ", text)
+    for node in generation_nodes:
+        if node.name == "h2":
+            header_text = normalize_space(node.get_text(" ", strip=True))
+            if MODIFICATION_HEADER_PATTERN.match(header_text):
+                current_mod = {
+                    "name": parse_modification_name(header_text, brand=brand, model=model),
+                    "pcd": None,
+                    "cb": None,
+                    "thread_size": None,
+                    "rim_rows": [],
+                }
+                modifications.append(current_mod)
+            continue
 
-    title = ""
-    if soup.title:
-        title = soup.title.get_text(" ", strip=True)
+        if current_mod is None:
+            continue
 
-    model = None
-    generation = None
-    year_from = None
-    year_to = None
+        if node.name == "p":
+            line = normalize_space(node.get_text(" ", strip=True))
+            line_lower = line.lower()
+            if "center bore" in line_lower:
+                current_mod["cb"] = parse_center_bore(line)
+            elif line_lower.startswith("pcd") or " bolt pattern" in line_lower:
+                current_mod["pcd"] = normalize_pcd(line)
+            elif "thread size" in line_lower:
+                current_mod["thread_size"] = normalize_thread_size(line)
+            continue
 
-    if title:
-        # Pvz: Skoda Octavia (1997 - 2005) Wheel Fitment
-        title_match = re.search(r"Skoda\s+([^\(]+)\((\d{4})\s*-\s*(\d{4})\)", title, flags=re.IGNORECASE)
-        if title_match:
-            model = title_match.group(1).strip()
-            year_from = int(title_match.group(2))
-            year_to = int(title_match.group(3))
+        if node.name == "table":
+            rim_rows = parse_rim_table(node)
+            if rim_rows:
+                current_mod["rim_rows"].extend(rim_rows)
 
-    if model is None:
-        path_text = unquote(urlparse(source_page).path)
-        # Fallback i URL kelia, pvz /car/Skoda/Octavia (1997 - 2005).html
-        path_match = re.search(r"/Skoda/([^/\(]+)\s*\((\d{4})\s*-\s*(\d{4})\)", path_text, flags=re.IGNORECASE)
-        if path_match:
-            model = path_match.group(1).strip()
-            year_from = int(path_match.group(2))
-            year_to = int(path_match.group(3))
+    if not modifications:
+        return None
 
-    pcd_match = re.search(r"PCD\s*:\s*([^\n\r<]+)", normalized, flags=re.IGNORECASE)
-    cb_match = re.search(r"Center\s*bore\s*:\s*([^\n\r<]+)", normalized, flags=re.IGNORECASE)
-    mounting_match = re.search(r"Mounting\s*:\s*([^\n\r<]+)", normalized, flags=re.IGNORECASE)
-    offset_match = re.search(r"Offset\s*:\s*([+-]?\d+(?:[\.,]\d+)?)", normalized, flags=re.IGNORECASE)
+    diameter_values: list[float] = []
+    width_values: list[float] = []
+    et_values: list[float] = []
+    pcd_values: list[str] = []
+    cb_values: list[float] = []
+    thread_values: list[str] = []
 
-    pcd = normalize_pcd(pcd_match.group(1)) if pcd_match else None
+    for mod in modifications:
+        if mod.get("pcd"):
+            pcd_values.append(str(mod["pcd"]))
+        if mod.get("cb") is not None:
+            cb_values.append(float(mod["cb"]))
+        if mod.get("thread_size"):
+            thread_values.append(str(mod["thread_size"]))
 
-    cb = None
-    if cb_match:
-        cb_raw = cb_match.group(1)
-        cb_num = STRICT_CB_PATTERN.search(cb_raw)
-        if cb_num:
-            cb = to_float(cb_num.group(0))
+        for rim_row in mod.get("rim_rows", []):
+            if rim_row.get("diameter_in") is not None:
+                diameter_values.append(float(rim_row["diameter_in"]))
+            if rim_row.get("width_j") is not None:
+                width_values.append(float(rim_row["width_j"]))
+            if rim_row.get("et") is not None:
+                et_values.append(float(rim_row["et"]))
 
-    thread_size = None
-    if mounting_match:
-        mount_raw = mounting_match.group(1)
-        mount_match = MOUNTING_THREAD_PATTERN.search(mount_raw)
-        if mount_match:
-            thread_size = f"M{mount_match.group(1)} x {mount_match.group(2).replace(',', '.')}"
+    pcd, pcd_conflicts = most_common_non_null(pcd_values)
+    cb, cb_conflicts = most_common_non_null(cb_values)
+    thread_size, thread_conflicts = most_common_non_null(thread_values)
+    bolt_count = derive_bolt_count(pcd)
 
-    default_offset = to_float(offset_match.group(1)) if offset_match else None
+    diameter_min = min(diameter_values) if diameter_values else None
+    diameter_max = max(diameter_values) if diameter_values else None
+    width_min = min(width_values) if width_values else None
+    width_max = max(width_values) if width_values else None
+    et_min = min(et_values) if et_values else None
+    et_max = max(et_values) if et_values else None
+
+    review_reasons: list[str] = []
+    if pcd_conflicts:
+        review_reasons.append("conflicting PCD values")
+    if cb_conflicts:
+        review_reasons.append("conflicting CB values")
+    if thread_conflicts:
+        review_reasons.append("conflicting thread_size values")
+    if pcd is None or (isinstance(pcd, str) and not pcd.strip()):
+        review_reasons.append("missing PCD")
+    if cb is None:
+        review_reasons.append("missing CB")
+    if diameter_min is None or diameter_max is None:
+        review_reasons.append("missing diameter range")
+    if width_min is None or width_max is None:
+        review_reasons.append("missing width range")
+    if et_min is None or et_max is None:
+        review_reasons.append("missing ET range")
+
+    needs_manual_review = 1 if review_reasons else 0
 
     return {
+        "brand": brand,
         "model": model,
         "generation": generation,
         "year_from": year_from,
         "year_to": year_to,
         "pcd": pcd,
         "cb": cb,
+        "bolt_count": bolt_count,
         "thread_size": thread_size,
-        "bolt_count": derive_bolt_count_from_pcd(pcd),
-        "default_offset": default_offset,
-        "source_page": source_page,
+        "center_bore_mm": cb,
+        "diameter_min_in": diameter_min,
+        "diameter_max_in": diameter_max,
+        "width_min_j": width_min,
+        "width_max_j": width_max,
+        "et_min": et_min,
+        "et_max": et_max,
+        "review_reason": " | ".join(sorted(set(review_reasons))) if review_reasons else None,
+        "needs_manual_review": needs_manual_review,
     }
 
 
-def merge_pair(
-    pair_meta: dict[str, Any],
-    wheelsize_data: dict[str, Any],
-    wheelfitment_data: dict[str, Any],
-) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
-    conflicts: list[dict[str, Any]] = []
-    reviews: list[dict[str, Any]] = []
 
-    model = wheelsize_data.get("model") or pair_meta.get("model") or wheelfitment_data.get("model")
-    generation = wheelsize_data.get("generation") or pair_meta.get("generation")
-    year_from = wheelsize_data.get("year_from") or pair_meta.get("year_from") or wheelfitment_data.get("year_from")
-    year_to = wheelsize_data.get("year_to") or pair_meta.get("year_to") or wheelfitment_data.get("year_to")
+def parse_html_rows(html: str, source_url: str, fallback_brand: str = "", fallback_model: str = "") -> list[dict[str, Any]]:
+    soup = BeautifulSoup(html, "html.parser")
+    parsed_brand, parsed_model = parse_page_identity(soup=soup, source_url=source_url)
+    brand = parsed_brand or fallback_brand or "Skoda"
+    model = parsed_model or fallback_model
 
-    if wheelfitment_data.get("model") and model and normalize_text(wheelfitment_data.get("model")).lower() != normalize_text(model).lower():
-        conflicts.append(
-            {
-                "dataset": "models",
-                "issue_type": "conflicting_model_name",
-                "key": f"{model}:{generation}:{year_from}-{year_to}",
-                "details": f"Wheel-Size model '{model}' vs Wheelfitment model '{wheelfitment_data.get('model')}'",
-                "source_page": f"{wheelsize_data.get('source_page')} | {wheelfitment_data.get('source_page')}",
-                "recommended_action": "Confirm model naming and URL pairing.",
-            }
+    generation_h2s: list[Tag] = []
+    for h2 in soup.find_all("h2"):
+        parsed = parse_generation_header(
+            header_text=h2.get_text(" ", strip=True),
+            brand=brand,
+            model=model,
+            heading_id=normalize_text(h2.get("id")),
         )
+        if parsed is not None:
+            generation_h2s.append(h2)
 
-    notes_parts: list[str] = []
-    if wheelfitment_data.get("default_offset") is not None:
-        notes_parts.append(f"wheelfitment_default_offset={wheelfitment_data.get('default_offset')}")
-    if wheelsize_data.get("aggregated_from_multiple_variants"):
-        notes_parts.append("aggregated_from_multiple_variants=true")
+    rows: list[dict[str, Any]] = []
+    for idx, generation_h2 in enumerate(generation_h2s):
+        next_h2 = generation_h2s[idx + 1] if idx + 1 < len(generation_h2s) else None
+        row = parse_generation_block(generation_h2=generation_h2, next_generation_h2=next_h2, brand=brand, model=model)
+        if row:
+            rows.append(row)
 
-    row: dict[str, Any] = {
-        "brand": pair_meta.get("brand") or "Skoda",
-        "model": model,
-        "generation": generation,
-        "year_from": year_from,
-        "year_to": year_to,
-        "pcd": wheelfitment_data.get("pcd"),
-        "cb": wheelfitment_data.get("cb"),
-        "bolt_count": wheelfitment_data.get("bolt_count"),
-        "thread_size": wheelfitment_data.get("thread_size"),
-        "center_bore_mm": wheelfitment_data.get("cb"),
-        "diameter_min_in": wheelsize_data.get("diameter_min_in"),
-        "diameter_max_in": wheelsize_data.get("diameter_max_in"),
-        "width_min_j": wheelsize_data.get("width_min_j"),
-        "width_max_j": wheelsize_data.get("width_max_j"),
-        "et_min": wheelsize_data.get("et_min"),
-        "et_max": wheelsize_data.get("et_max"),
-        "notes": " | ".join(notes_parts) if notes_parts else None,
-        "source_type": "merged_wheelsize_wheelfitment",
-        "source_page": f"{wheelsize_data.get('source_page', '')} | {wheelfitment_data.get('source_page', '')}",
-        "extraction_confidence": 0.85,
-        "needs_manual_review": False,
-    }
-
-    critical_missing = ["pcd", "cb", "thread_size", "diameter_min_in", "diameter_max_in", "width_min_j", "width_max_j"]
-    if any(row.get(k) in (None, "") for k in critical_missing):
-        row["needs_manual_review"] = True
-        row["extraction_confidence"] = 0.55
-        reviews.append(
-            {
-                "dataset": "models",
-                "issue_type": "missing_critical_fields",
-                "key": f"{row.get('brand')}:{row.get('model')}:{row.get('generation')}:{row.get('year_from')}-{row.get('year_to')}",
-                "details": "Missing one of: pcd, cb, thread_size, diameter range, width range",
-                "source_page": row.get("source_page", ""),
-                "recommended_action": "Verify both source URLs and update parser mappings.",
-            }
-        )
-
-    return row, conflicts, reviews
+    return rows
 
 
-def ensure_schema(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
-    for col in columns:
+
+def save_json(path: Path, df: pd.DataFrame) -> None:
+    records = df.where(pd.notnull(df), None).to_dict(orient="records")
+    path.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+
+def load_existing_output(output_dir: Path) -> pd.DataFrame:
+    csv_path = output_dir / "skoda_models.csv"
+    json_path = output_dir / "skoda_models.json"
+
+    if csv_path.exists():
+        return pd.read_csv(csv_path)
+
+    if json_path.exists():
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            raise ValueError(f"Existing JSON output has invalid format: {json_path}")
+        return pd.DataFrame(data)
+
+    return pd.DataFrame(columns=MODEL_SCHEMA)
+
+
+
+def normalize_schema(df: pd.DataFrame) -> pd.DataFrame:
+    for col in MODEL_SCHEMA:
         if col not in df.columns:
             df[col] = None
-    return df[columns]
 
-
-def load_pairs_from_csv(csv_path: Path) -> list[dict[str, Any]]:
-    df = pd.read_csv(csv_path)
-    required = ["wheel_size_url", "wheelfitment_url"]
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        raise ValueError(f"pairs CSV missing columns: {missing}")
-
-    pairs: list[dict[str, Any]] = []
-    for _, row in df.iterrows():
-        ws = normalize_text(row.get("wheel_size_url"))
-        wf = normalize_text(row.get("wheelfitment_url"))
-        if not ws or not wf:
-            continue
-        pairs.append(
-            {
-                "brand": normalize_text(row.get("brand")) or "Skoda",
-                "model": normalize_text(row.get("model")) or None,
-                "generation": normalize_text(row.get("generation")) or None,
-                "year_from": int(row.get("year_from")) if pd.notna(row.get("year_from")) else None,
-                "year_to": int(row.get("year_to")) if pd.notna(row.get("year_to")) else None,
-                "wheel_size_url": ws,
-                "wheelfitment_url": wf,
-            }
-        )
-    return pairs
-
-
-def load_pairs_from_cli(wheel_size_urls: list[str], wheelfitment_urls: list[str]) -> list[dict[str, Any]]:
-    ws = [normalize_text(x) for x in wheel_size_urls if normalize_text(x)]
-    wf = [normalize_text(x) for x in wheelfitment_urls if normalize_text(x)]
-    if not ws and not wf:
-        return []
-    if len(ws) != len(wf):
-        raise ValueError("--wheel-size-url and --wheelfitment-url counts must match.")
-    return [
-        {
-            "brand": "Skoda",
-            "model": None,
-            "generation": None,
-            "year_from": None,
-            "year_to": None,
-            "wheel_size_url": w,
-            "wheelfitment_url": f,
-        }
-        for w, f in zip(ws, wf)
+    float_cols = [
+        "cb",
+        "center_bore_mm",
+        "diameter_min_in",
+        "diameter_max_in",
+        "width_min_j",
+        "width_max_j",
+        "et_min",
+        "et_max",
     ]
+    int_cols = ["year_from", "year_to", "bolt_count"]
+
+    for col in float_cols:
+        df[col] = df[col].apply(to_float)
+    for col in int_cols:
+        df[col] = df[col].apply(to_int)
+
+    df["needs_manual_review"] = df["needs_manual_review"].apply(to_bool_int)
+    df["review_reason"] = df["review_reason"].apply(normalize_text)
+    df["brand"] = df["brand"].astype(str).replace("nan", "").str.strip()
+    df["model"] = df["model"].astype(str).replace("nan", "").str.strip()
+    df["generation"] = df["generation"].astype(str).replace("nan", "").str.strip()
+    df["pcd"] = df["pcd"].astype(str).replace("nan", "").str.strip()
+    df["thread_size"] = df["thread_size"].astype(str).replace("nan", "").str.strip()
+
+    dedupe_keys = ["brand", "model", "generation", "year_from", "year_to"]
+    return df[MODEL_SCHEMA].drop_duplicates(subset=dedupe_keys, keep="first")
 
 
-def save_outputs(models_df: pd.DataFrame, output_dir: Path) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    models_csv = output_dir / "skoda_models.csv"
-    models_json = output_dir / "skoda_models.json"
-    models_df.to_csv(models_csv, index=False, encoding="utf-8")
-    models_json.write_text(
-        json.dumps(models_df.where(pd.notna(models_df), None).to_dict(orient="records"), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    LOGGER.info("Saved %s", models_csv)
-    LOGGER.info("Saved %s", models_json)
 
+def consolidate_generation_rows(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
 
-def save_review_outputs(conflicts: list[dict[str, Any]], reviews: list[dict[str, Any]], output_dir: Path) -> None:
-    cols = ["dataset", "issue_type", "key", "details", "source_page", "recommended_action"]
-    output_dir.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(conflicts, columns=cols).to_csv(output_dir / "source_conflicts.csv", index=False, encoding="utf-8")
-    pd.DataFrame(reviews, columns=cols).to_csv(output_dir / "manual_review.csv", index=False, encoding="utf-8")
+    key_cols = ["brand", "model", "generation", "year_from", "year_to"]
+    grouped = df.groupby(key_cols, dropna=False, sort=False)
+    merged_rows: list[dict[str, Any]] = []
+
+    for key, group in grouped:
+        merged: dict[str, Any] = {
+            "brand": key[0],
+            "model": key[1],
+            "generation": key[2],
+            "year_from": key[3],
+            "year_to": key[4],
+        }
+
+        reasons: list[str] = []
+
+        for field in ["pcd", "thread_size"]:
+            winner, conflicts = most_common_non_null(group[field].tolist())
+            merged[field] = winner
+            if conflicts:
+                reasons.append(f"conflicting {field} values")
+
+        for field in ["cb", "center_bore_mm", "bolt_count"]:
+            values = [to_float(v) for v in group[field].tolist() if to_float(v) is not None]
+            if field == "bolt_count":
+                ivals = [to_int(v) for v in group[field].tolist() if to_int(v) is not None]
+                merged[field] = ivals[0] if ivals else None
+                if len(set(ivals)) > 1:
+                    reasons.append("conflicting bolt_count values")
+            else:
+                merged[field] = values[0] if values else None
+                if len(set(values)) > 1:
+                    reasons.append(f"conflicting {field} values")
+
+        merged["diameter_min_in"] = min([to_float(v) for v in group["diameter_min_in"].tolist() if to_float(v) is not None], default=None)
+        merged["diameter_max_in"] = max([to_float(v) for v in group["diameter_max_in"].tolist() if to_float(v) is not None], default=None)
+        merged["width_min_j"] = min([to_float(v) for v in group["width_min_j"].tolist() if to_float(v) is not None], default=None)
+        merged["width_max_j"] = max([to_float(v) for v in group["width_max_j"].tolist() if to_float(v) is not None], default=None)
+        merged["et_min"] = min([to_float(v) for v in group["et_min"].tolist() if to_float(v) is not None], default=None)
+        merged["et_max"] = max([to_float(v) for v in group["et_max"].tolist() if to_float(v) is not None], default=None)
+
+        existing_reasons = [normalize_space(normalize_text(x)) for x in group["review_reason"].tolist() if normalize_text(x)]
+        reasons.extend(existing_reasons)
+
+        if merged.get("pcd") in (None, ""):
+            reasons.append("missing PCD")
+        if merged.get("center_bore_mm") is None:
+            reasons.append("missing CB")
+        if merged.get("diameter_min_in") is None or merged.get("diameter_max_in") is None:
+            reasons.append("missing diameter range")
+        if merged.get("width_min_j") is None or merged.get("width_max_j") is None:
+            reasons.append("missing width range")
+        if merged.get("et_min") is None or merged.get("et_max") is None:
+            reasons.append("missing ET range")
+
+        reason_text = " | ".join(dict.fromkeys([r for r in reasons if r])) if reasons else ""
+        merged["review_reason"] = reason_text
+        merged["needs_manual_review"] = 1 if reason_text else 0
+
+        merged_rows.append(merged)
+
+    merged_df = pd.DataFrame(merged_rows)
+    for col in MODEL_SCHEMA:
+        if col not in merged_df.columns:
+            merged_df[col] = None
+    return merged_df[MODEL_SCHEMA].copy()
+
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Scrape Skoda model fitment using URL pairs (Wheel-Size + wheelfitment.eu).")
-    parser.add_argument("--pairs-csv", default="", help="CSV with columns: brand,model,generation,year_from,year_to,wheel_size_url,wheelfitment_url")
-    parser.add_argument("--wheel-size-url", action="append", default=[], help="Wheel-Size URL. Repeatable.")
-    parser.add_argument("--wheelfitment-url", action="append", default=[], help="wheelfitment.eu URL. Repeatable.")
-    parser.add_argument("--output-dir", default=".", help="Output directory for model files.")
-    parser.add_argument("--timeout", type=int, default=20, help="Request timeout in seconds.")
-    parser.add_argument("--delay", type=float, default=1.0, help="Delay between requests in seconds.")
-    parser.add_argument("--save-raw-html", action="store_true", help="Save raw HTML snapshots for debugging.")
-    parser.add_argument("--raw-html-dir", default="raw_html/models", help="Raw HTML output directory.")
-    parser.add_argument("--verbose", action="store_true", help="Enable debug logs.")
-    parser.add_argument(
-        "--user-agent",
-        default="BachelorThesisSkodaWheelResearchBot/1.0 (+contact: local-research)",
-        help="HTTP user-agent header.",
-    )
+    parser = argparse.ArgumentParser(description="Scrape TireWheelGuide pages into canonical Skoda fitment records")
+    parser.add_argument("--source-url", action="append", default=[], help="TireWheelGuide URL, can be repeated")
+    parser.add_argument("--pairs-csv", default="", help="CSV with brand,model,source_url")
+    parser.add_argument("--input-csv", default="", help="Alias for --pairs-csv")
+    parser.add_argument("--output-dir", default=".", help="Output directory")
+    parser.add_argument("--save-raw-html", action="store_true", help="Save raw HTML")
+    parser.add_argument("--raw-html-dir", default="raw_html/tirewheelguide", help="Raw HTML directory")
+    parser.add_argument("--timeout", type=int, default=25, help="Request timeout in seconds")
+    parser.add_argument("--user-agent", default="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+    parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
+    parser.add_argument("--merge-existing", action="store_true", help="Merge with existing output")
     return parser.parse_args()
 
 
-def main() -> None:
+
+def main() -> int:
     args = parse_args()
     configure_logging(args.verbose)
 
-    output_dir = Path(args.output_dir)
-    raw_html_dir = Path(args.raw_html_dir)
+    deduped_sources = load_input_rows(args.source_url or [], args.pairs_csv or args.input_csv)
+    if not deduped_sources:
+        raise ValueError("No sources provided. Use --source-url and/or --pairs-csv/--input-csv.")
+
     session = build_session(user_agent=args.user_agent)
+    raw_html_dir = Path(args.raw_html_dir)
 
-    pairs: list[dict[str, Any]] = []
-    if args.pairs_csv:
-        pairs.extend(load_pairs_from_csv(Path(args.pairs_csv)))
-    pairs.extend(load_pairs_from_cli(args.wheel_size_url, args.wheelfitment_url))
+    all_rows: list[dict[str, Any]] = []
+    processed_pages = 0
+    failed_pages = 0
 
-    if not pairs:
-        raise ValueError("No source pairs provided. Use --pairs-csv or matching --wheel-size-url/--wheelfitment-url pairs.")
-
-    records: list[dict[str, Any]] = []
-    conflicts: list[dict[str, Any]] = []
-    reviews: list[dict[str, Any]] = []
-
-    for pair in pairs:
-        ws_url = pair["wheel_size_url"]
-        wf_url = pair["wheelfitment_url"]
-
-        ws_html = fetch_page(
-            session=session,
-            url=ws_url,
-            timeout=args.timeout,
-            delay_seconds=args.delay,
-            save_raw_html=args.save_raw_html,
-            raw_html_dir=raw_html_dir,
-        )
-        wf_html = fetch_page(
-            session=session,
-            url=wf_url,
-            timeout=args.timeout,
-            delay_seconds=args.delay,
-            save_raw_html=args.save_raw_html,
-            raw_html_dir=raw_html_dir,
-        )
-
-        if not ws_html or not wf_html:
-            reviews.append(
-                {
-                    "dataset": "models",
-                    "issue_type": "source_fetch_failed",
-                    "key": f"{pair.get('brand')}:{pair.get('model')}:{pair.get('generation')}",
-                    "details": "Failed to fetch one or both pair URLs.",
-                    "source_page": f"{ws_url} | {wf_url}",
-                    "recommended_action": "Retry fetch and check network/source availability.",
-                }
-            )
+    for source in deduped_sources:
+        source_url = source.get("source_url")
+        try:
+            html = fetch_html(session=session, source_url=source_url, timeout=args.timeout)
+        except Exception:
+            failed_pages += 1
             continue
 
-        ws_soup = BeautifulSoup(ws_html, "html.parser")
-        wf_soup = BeautifulSoup(wf_html, "html.parser")
+        processed_pages += 1
+        if args.save_raw_html:
+            try:
+                save_raw_html(raw_html_dir=raw_html_dir, source_url=source_url, html=html)
+            except Exception:
+                pass
 
-        ws_meta = parse_wheelsize_metadata_from_url(ws_url)
-        if not ws_meta.get("generation"):
-            ws_generation = parse_wheelsize_generation_from_meta(ws_soup, model=ws_meta.get("model"))
-            if ws_generation:
-                ws_meta["generation"] = ws_generation
-        if not ws_meta.get("generation"):
-            ws_generation = parse_wheelsize_generation_from_header(ws_soup, model=ws_meta.get("model"))
-            if ws_generation:
-                ws_meta["generation"] = ws_generation
-        ws_ranges = parse_wheelsize_ranges(ws_soup, source_page=ws_url)
-        wheelsize_data = {**ws_meta, **ws_ranges}
-        wheelfitment_data = parse_wheelfitment_page(wf_soup, source_page=wf_url)
+        try:
+            rows = parse_html_rows(
+                html=html,
+                source_url=source_url,
+                fallback_brand=source.get("brand", ""),
+                fallback_model=source.get("model", ""),
+            )
+            all_rows.extend(rows)
+        except Exception:
+            failed_pages += 1
 
-        merged, row_conflicts, row_reviews = merge_pair(pair, wheelsize_data, wheelfitment_data)
-        records.append(merged)
-        conflicts.extend(row_conflicts)
-        reviews.extend(row_reviews)
+    new_rows_df = pd.DataFrame(all_rows)
+    new_rows_df = normalize_schema(new_rows_df) if not new_rows_df.empty else pd.DataFrame(columns=MODEL_SCHEMA)
 
-    models_df = ensure_schema(pd.DataFrame(records), MODEL_SCHEMA)
-    save_outputs(models_df=models_df, output_dir=output_dir)
-    save_review_outputs(conflicts=conflicts, reviews=reviews, output_dir=output_dir)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    existing_rows_df = pd.DataFrame(columns=MODEL_SCHEMA)
+    if args.merge_existing:
+        existing_rows_df = load_existing_output(output_dir)
+        existing_rows_df = normalize_schema(existing_rows_df) if not existing_rows_df.empty else existing_rows_df
+
+    models_df = pd.concat([existing_rows_df, new_rows_df], ignore_index=True)
+    models_df = consolidate_generation_rows(models_df) if not models_df.empty else models_df
+    models_df = normalize_schema(models_df) if not models_df.empty else models_df
+
+    csv_out = output_dir / "skoda_models.csv"
+    json_out = output_dir / "skoda_models.json"
+
+    models_df.to_csv(csv_out, index=False, encoding="utf-8")
+    save_json(json_out, models_df)
+
+    manual_review_count = int(models_df[models_df["needs_manual_review"] == 1].shape[0]) if not models_df.empty else 0
+    print(f"[scrape] processed: {processed_pages}")
+    print(f"[scrape] failed: {failed_pages}")
+    print(f"[scrape] rows: {len(models_df)}")
+    print(f"[scrape] manual: {manual_review_count}")
+    print(f"[scrape] csv: {csv_out}")
+    print(f"[scrape] json: {json_out}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

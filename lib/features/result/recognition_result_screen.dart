@@ -27,7 +27,7 @@ class RecognitionResultScreen extends StatelessWidget {
     final branch = outcome.branch;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Atpažinimo rezultatas')),
+      appBar: AppBar(title: const Text('Identifikavimo rezultatas')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: SingleChildScrollView(
@@ -48,8 +48,8 @@ class RecognitionResultScreen extends StatelessWidget {
                 branch == RecognitionBranch.strong
                     ? 'Labiausiai panašus ratlankis'
                     : branch == RecognitionBranch.candidates
-                    ? 'Parink labiausiai panašų modelį'
-                    : 'Nepavyko patikimai atpažinti ratlankio',
+                    ? 'Parinkite labiausiai panašų modelį'
+                    : 'Nepavyko patikimai identifikuoti ratlankio',
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
@@ -195,7 +195,7 @@ class _HeroCandidateCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Panašumo balas ${(candidate.score * 100).toStringAsFixed(1)}%',
+              'Panašumo įvertis ${(candidate.score * 100).toStringAsFixed(1)}%',
               style: TextStyle(color: Theme.of(context).colorScheme.mutedText),
             ),
             const SizedBox(height: 14),

@@ -18,6 +18,7 @@ class AppState extends ChangeNotifier {
   Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
 
+    // Atkuriami lokaliai issaugoti naudotojo pasirinkimai
     final savedTheme = prefs.getString(_themeKey);
     if (savedTheme == 'light') {
       _themeMode = ThemeMode.light;
@@ -35,6 +36,7 @@ class AppState extends ChangeNotifier {
           _selectedCar = VehicleFitment.fromJson(decoded.cast<String, dynamic>());
         }
       } catch (_) {
+        // Jei irasas sugadintas arba seno formato, pasirinkima atmetam
         _selectedCar = null;
       }
     }

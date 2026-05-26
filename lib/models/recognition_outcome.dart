@@ -74,7 +74,7 @@ class RecognitionOutcome {
         return AppConstants.recognitionAmbiguousCandidatesMessage;
       case RecognitionManualPickReason.lowTop1Similarity:
       case null:
-        return 'Atpažinimo atitikimas žemesnis, pasirink vieną iš galimų variantų.';
+        return 'Panašumo įvertis žemesnis, pasirinkite vieną iš galimų variantų.';
     }
   }
 }

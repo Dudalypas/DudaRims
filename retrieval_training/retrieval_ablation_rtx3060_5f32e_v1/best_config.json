@@ -1,0 +1,61 @@
+{
+  "selected_config": "batch_size_16",
+  "justification": "Selected 'batch_size_16' based on: recall@1=0.8951\u00b10.0139, recall@3=0.9744\u00b10.0089. ",
+  "metrics": {
+    "recall@1": {
+      "mean": 0.8951475561097956,
+      "std": 0.013858526486350503
+    },
+    "recall@3": {
+      "mean": 0.9743509395830803,
+      "std": 0.008905498774888332
+    },
+    "recall@5": {
+      "mean": 0.9908065138032545,
+      "std": 0.0012758163946301065
+    },
+    "macro_precision": {
+      "mean": 0.895544634858951,
+      "std": 0.012285310773023314
+    },
+    "macro_recall": {
+      "mean": 0.8888562146150504,
+      "std": 0.014074576693425307
+    },
+    "macro_f1": {
+      "mean": 0.8902995565728865,
+      "std": 0.013414863932010995
+    },
+    "weighted_precision": {
+      "mean": 0.8981850833961786,
+      "std": 0.012131940937139289
+    },
+    "weighted_recall": {
+      "mean": 0.8951475561097956,
+      "std": 0.013858526486350503
+    },
+    "weighted_f1": {
+      "mean": 0.8949787108814371,
+      "std": 0.013513609173407196
+    }
+  },
+  "config": {
+    "name": "batch_size_16",
+    "description": "Ablation: batch_size=16 (smaller batches, sensitivity check)",
+    "img_size": 224,
+    "batch_size": 16,
+    "epochs": 32,
+    "seed": 42,
+    "early_stopping_patience": 5,
+    "embedding_dim": 256,
+    "learning_rate": 0.001,
+    "triplet_margin": 0.2,
+    "triplet_weight": 0.5,
+    "ce_weight": 1.0,
+    "dropout": 0.2,
+    "reference_mode": "limited",
+    "max_refs_per_class": 20,
+    "retrieval_mode": "centroid",
+    "topn": 1
+  }
+}

@@ -1,0 +1,28 @@
+appId: com.example.dudarims
+---
+- launchApp:
+    clearState: true
+- tapOn: "Įkelti nuotrauką"
+- tapOn: "Photo taken on 3 May 2026 10:16"
+- tapOn: "Done"
+- assertVisible: "Labiausiai panašus ratlankis"
+- assertVisible: "Peržiūrėti specifikaciją ir suderinamumą"
+- tapOn: "Peržiūrėti specifikaciją ir suderinamumą"
+- assertVisible: "Pasirinkti automobilį"
+- tapOn: "Pasirinkti automobilį"
+- assertVisible: "Pasirinkite automobilio modelį"
+- tapOn: "Pasirinkite automobilio modelį"
+- tapOn: "Fabia"
+- tapOn: "Pasirinkite kartą"
+- tapOn: "Mk1 (6Y) (1999-2007)"
+- assertVisible: "Fabia"
+- assertVisible: "Mk1 (6Y) (1999-2007)"
+- tapOn: "Išsaugoti automobilį"
+- assertVisible: "Suderinamumas su Fabia Mk1 (6Y) (1999-2007)"
+- tapOn: "Techninė detalizacija, Collapsed"
+- assertVisible: "Techninė detalizacija, Expanded"
+- assertVisible: "PCD"
+- assertVisible: "Ratlankis: 5x112"
+- assertVisible: "Automobilio riba: 5x100"
+- assertVisible: "Kritinis"
+- assertVisible: "PCD Ratlankis: 5x112 | Automobilio riba: 5x100 Kritinis"

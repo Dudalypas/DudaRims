@@ -1,0 +1,10 @@
+appId: com.example.dudarims
+---
+- launchApp:
+    clearState: true
+
+- assertVisible: "Pasirinkti automobilį"
+- assertVisible: "Fotografuoti"
+- assertVisible: "Įkelti nuotrauką"
+- tapOn: "Pasirinkti automobilį"
+- assertVisible: "Pasirinkite automobilio modelį"

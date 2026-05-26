@@ -13,7 +13,7 @@ from PIL import Image, ImageOps
 from retrieval_experiment_core import build_classification_metrics, save_json, write_csv
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DATASET_ROOT = Path(r"C:\Users\vilja\Desktop\Training_Mixed_V1")
+DEFAULT_DATASET_ROOT = PROJECT_ROOT / "Training_Mixed_V1"
 DEFAULT_EMBEDDING_MODEL = PROJECT_ROOT / "assets" / "models" / "wheel_embedding_cropped_float32.tflite"
 DEFAULT_REFERENCE_JSON = PROJECT_ROOT / "assets" / "data" / "wheel_reference_embeddings.json"
 DEFAULT_REPORT_JSON = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_eval_summary.json"
@@ -31,44 +31,44 @@ TOP_KS = (1, 3, 5)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate embedding retrieval modes with Recall@k on val/test splits."
+        description="Evaluate retrieval modes on val and test splits"
     )
-    parser.add_argument("--dataset-root", type=str, default=str(DEFAULT_DATASET_ROOT))
-    parser.add_argument("--model", type=str, default=str(DEFAULT_EMBEDDING_MODEL))
-    parser.add_argument("--reference-json", type=str, default=str(DEFAULT_REFERENCE_JSON))
-    parser.add_argument("--img-size", type=int, default=224)
-    parser.add_argument("--splits", nargs="+", default=["val", "test"])
+    parser.add_argument("--dataset-root", type=str, default=str(DEFAULT_DATASET_ROOT), help="Root folder with split data")
+    parser.add_argument("--model", type=str, default=str(DEFAULT_EMBEDDING_MODEL), help="Embedding model path")
+    parser.add_argument("--reference-json", type=str, default=str(DEFAULT_REFERENCE_JSON), help="Reference embeddings JSON")
+    parser.add_argument("--img-size", type=int, default=224, help="Input size for embeddings")
+    parser.add_argument("--splits", nargs="+", default=["val", "test"], help="Splits to evaluate")
     parser.add_argument(
         "--retrieval-modes",
         nargs="+",
         default=["centroid", "multi_max", "multi_topn_avg"],
         choices=["centroid", "multi_max", "multi_topn_avg"],
+        help="Retrieval modes to compare",
     )
     parser.add_argument(
         "--topn-values",
         nargs="+",
         type=int,
         default=[3],
-        help="Used only for multi_topn_avg mode.",
+        help="TopN values for multi_topn_avg",
     )
     parser.add_argument(
         "--crop-profiles",
         nargs="+",
         default=["no_crop:false:0.04:0.94:true", "det_crop:true:0.04:0.94:true"],
         help=(
-            "List of profile specs in format: name:use_detector_crop:padding:tighten:enforce_square. "
-            "Example: det_tight:true:0.02:0.90:true"
+            "Crop profiles as name:use_detector_crop:padding:tighten:enforce_square"
         ),
     )
-    parser.add_argument("--detector-model", type=str, default=str(DEFAULT_DETECTOR_MODEL))
-    parser.add_argument("--limit-per-class", type=int, default=0)
-    parser.add_argument("--report-json", type=str, default=str(DEFAULT_REPORT_JSON))
-    parser.add_argument("--report-csv", type=str, default=str(DEFAULT_REPORT_CSV))
-    parser.add_argument("--experiments-csv", type=str, default=str(DEFAULT_EXPERIMENT_CSV))
-    parser.add_argument("--top1-compare-csv", type=str, default=str(DEFAULT_TOP1_COMPARE_CSV))
-    parser.add_argument("--classification-report-csv", type=str, default=str(DEFAULT_CLASSIFICATION_REPORT_CSV))
-    parser.add_argument("--confusion-matrix-csv", type=str, default=str(DEFAULT_CONFUSION_MATRIX_CSV))
-    parser.add_argument("--top1-predictions-csv", type=str, default=str(DEFAULT_TOP1_PREDICTIONS_CSV))
+    parser.add_argument("--detector-model", type=str, default=str(DEFAULT_DETECTOR_MODEL), help="Detector model path")
+    parser.add_argument("--limit-per-class", type=int, default=0, help="Optional cap per class")
+    parser.add_argument("--report-json", type=str, default=str(DEFAULT_REPORT_JSON), help="Summary JSON output")
+    parser.add_argument("--report-csv", type=str, default=str(DEFAULT_REPORT_CSV), help="Per-class CSV output")
+    parser.add_argument("--experiments-csv", type=str, default=str(DEFAULT_EXPERIMENT_CSV), help="Experiment CSV output")
+    parser.add_argument("--top1-compare-csv", type=str, default=str(DEFAULT_TOP1_COMPARE_CSV), help="Top1 compare CSV")
+    parser.add_argument("--classification-report-csv", type=str, default=str(DEFAULT_CLASSIFICATION_REPORT_CSV), help="Classification report CSV")
+    parser.add_argument("--confusion-matrix-csv", type=str, default=str(DEFAULT_CONFUSION_MATRIX_CSV), help="Confusion matrix CSV")
+    parser.add_argument("--top1-predictions-csv", type=str, default=str(DEFAULT_TOP1_PREDICTIONS_CSV), help="Top1 predictions CSV")
     return parser.parse_args()
 
 
@@ -357,7 +357,7 @@ def load_references(reference_json: Path) -> dict[str, dict[str, object]]:
                     continue
                 vectors.append(l2_normalize(np.asarray(emb, dtype=np.float32).reshape(-1)))
 
-        # Backward compatibility with centroid-only files.
+        # Suderinamumas su centroidu failais
         if not vectors and centroid is not None:
             vectors = [centroid]
 
@@ -802,13 +802,13 @@ def main() -> None:
     }
     report_json.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
-    print("Saved summary:", report_json)
-    print("Saved per-class report:", report_csv)
-    print("Saved experiment grid:", experiments_csv)
-    print("Saved top1 compare:", top1_compare_csv)
-    print("Saved classification report:", Path(args.classification_report_csv))
-    print("Saved confusion matrix:", Path(args.confusion_matrix_csv))
-    print("Saved top1 predictions:", Path(args.top1_predictions_csv))
+    print(f"[eval] summary: {report_json}")
+    print(f"[eval] per-class: {report_csv}")
+    print(f"[eval] grid: {experiments_csv}")
+    print(f"[eval] top1-compare: {top1_compare_csv}")
+    print(f"[eval] report: {Path(args.classification_report_csv)}")
+    print(f"[eval] confusion: {Path(args.confusion_matrix_csv)}")
+    print(f"[eval] top1-preds: {Path(args.top1_predictions_csv)}")
 
 
 if __name__ == "__main__":

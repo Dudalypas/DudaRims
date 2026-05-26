@@ -12,7 +12,7 @@ DEFAULT_OUTPUT_MODEL = PROJECT_ROOT / "assets" / "models" / "wheel_embedding_cro
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Export an L2-normalized embedding extractor from a trained Keras classifier."
+        description="Export an embedding extractor from a trained Keras model"
     )
     parser.add_argument("--source-model", type=str, default=str(DEFAULT_SOURCE_MODEL))
     parser.add_argument("--output", type=str, default=str(DEFAULT_OUTPUT_MODEL))
@@ -20,12 +20,12 @@ def parse_args() -> argparse.Namespace:
         "--penultimate-layer",
         type=str,
         default="",
-        help="Optional layer name to use as embedding source. Defaults to model.layers[-2].",
+        help="Layer name to use as embedding source",
     )
     parser.add_argument(
         "--export-fp16",
         action="store_true",
-        help="Also export an fp16-quantized embedding model variant.",
+        help="Also export an fp16 variant",
     )
     return parser.parse_args()
 
@@ -76,9 +76,9 @@ def print_tflite_io(model_path: Path) -> None:
     input_tensor = interpreter.get_input_details()[0]
     output_tensor = interpreter.get_output_details()[0]
 
-    print("TFLite model:", model_path)
-    print("Input shape:", input_tensor["shape"], "dtype:", input_tensor["dtype"])
-    print("Output shape:", output_tensor["shape"], "dtype:", output_tensor["dtype"])
+    print("[convert] model:", model_path)
+    print("[convert] input:", input_tensor["shape"], input_tensor["dtype"])
+    print("[convert] output:", output_tensor["shape"], output_tensor["dtype"])
 
 
 def main() -> None:
@@ -97,13 +97,13 @@ def main() -> None:
     )
 
     export_float32_tflite(embedding_model, output_path)
-    print("Exported embedding model (float32):", output_path)
+    print("[convert] float32:", output_path)
     print_tflite_io(output_path)
 
     if args.export_fp16:
         fp16_out = output_path.with_name(output_path.stem + "_fp16.tflite")
         export_fp16_tflite(embedding_model, fp16_out)
-        print("Exported embedding model (fp16):", fp16_out)
+        print("[convert] fp16:", fp16_out)
         print_tflite_io(fp16_out)
 
 

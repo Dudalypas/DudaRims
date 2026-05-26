@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from dataclasses import dataclass, asdict
 from pathlib import Path
+from typing import Any
+
+import numpy as np
+from sklearn.metrics import f1_score, precision_score, recall_score
 
 from retrieval_experiment_core import (
     TOP_KS,
@@ -21,14 +26,43 @@ from retrieval_experiment_core import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_EXPERIMENT_ROOT = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_experiment_v2"
+DEFAULT_EXPERIMENT_ROOT = PROJECT_ROOT / "trained_cropped_classifier" / "retrieval_experiment_v5"
 DEFAULT_FOLDS_CSV = DEFAULT_EXPERIMENT_ROOT / "folds" / "dev_with_folds.csv"
 BASELINE_VAL = {"recall@1": 0.5007, "recall@3": 0.8027, "recall@5": 0.8912}
 
 
+@dataclass
+class CVExperimentResult:
+    name: str
+    description: str
+    config: dict[str, Any]
+    output_dir: Path
+    cv_summary_path: Path | None
+    recall_at_1_mean: float | None
+    recall_at_1_std: float | None
+    recall_at_3_mean: float | None
+    recall_at_3_std: float | None
+    recall_at_5_mean: float | None
+    recall_at_5_std: float | None
+    success: bool
+    macro_precision_mean: float | None = None
+    macro_precision_std: float | None = None
+    macro_recall_mean: float | None = None
+    macro_recall_std: float | None = None
+    macro_f1_mean: float | None = None
+    macro_f1_std: float | None = None
+    weighted_precision_mean: float | None = None
+    weighted_precision_std: float | None = None
+    weighted_recall_mean: float | None = None
+    weighted_recall_std: float | None = None
+    weighted_f1_mean: float | None = None
+    weighted_f1_std: float | None = None
+    error_msg: str | None = None
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run 5-fold cross-validation for new retrieval embedding model on TRAIN+VAL development set."
+        description="Run 5-fold cross-validation on TRAIN+VAL data"
     )
     parser.add_argument("--folds-csv", type=str, default=str(DEFAULT_FOLDS_CSV))
     parser.add_argument("--output-dir", type=str, default=str(DEFAULT_EXPERIMENT_ROOT / "cv"))
@@ -37,6 +71,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=32)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--early-stopping-patience", type=int, default=5)
 
     parser.add_argument("--embedding-dim", type=int, default=256)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
@@ -48,9 +83,77 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reference-mode", choices=["all", "limited"], default="limited")
     parser.add_argument("--max-refs-per-class", type=int, default=20)
     parser.add_argument("--retrieval-modes", nargs="+", choices=["centroid", "multi_max", "multi_topn_avg"], default=["centroid", "multi_max", "multi_topn_avg"])
-    parser.add_argument("--topn", type=int, default=3)
+    parser.add_argument("--topn", type=int, default=1)
 
     return parser.parse_args()
+
+
+def mean_std(values: list[float]) -> tuple[float | None, float | None]:
+    if not values:
+        return None, None
+    arr = np.asarray(values, dtype=np.float64)
+    return float(np.mean(arr)), float(np.std(arr))
+
+
+def compute_top1_classification_metrics(
+    y_true: list[str],
+    y_pred: list[str],
+    labels: list[str] | None = None,
+) -> dict[str, float]:
+    if labels is None:
+        labels = sorted(set(y_true) | set(y_pred))
+    labels = [str(label) for label in labels]
+
+    if not y_true:
+        return {
+            "macro_precision": 0.0,
+            "macro_recall": 0.0,
+            "macro_f1": 0.0,
+            "weighted_precision": 0.0,
+            "weighted_recall": 0.0,
+            "weighted_f1": 0.0,
+        }
+
+    return {
+        "macro_precision": float(precision_score(y_true, y_pred, labels=labels, average="macro", zero_division=0)),
+        "macro_recall": float(recall_score(y_true, y_pred, labels=labels, average="macro", zero_division=0)),
+        "macro_f1": float(f1_score(y_true, y_pred, labels=labels, average="macro", zero_division=0)),
+        "weighted_precision": float(precision_score(y_true, y_pred, labels=labels, average="weighted", zero_division=0)),
+        "weighted_recall": float(recall_score(y_true, y_pred, labels=labels, average="weighted", zero_division=0)),
+        "weighted_f1": float(f1_score(y_true, y_pred, labels=labels, average="weighted", zero_division=0)),
+    }
+
+
+def merge_aggregate_rows(
+    recall_rows: list[dict[str, Any]],
+    classification_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    classification_by_key = {
+        (str(row["retrieval_mode"]), int(row["topn"])): row for row in classification_rows
+    }
+
+    merged_rows: list[dict[str, Any]] = []
+    for row in recall_rows:
+        key = (str(row["retrieval_mode"]), int(row["topn"]))
+        merged = dict(row)
+        classification_row = classification_by_key.get(key)
+        if classification_row is not None:
+            merged.update(classification_row)
+        merged_rows.append(merged)
+    return merged_rows
+
+
+def format_mean_std(mean: float | None, std: float | None) -> str:
+    if mean is None or std is None:
+        return "n/a"
+    return f"{mean:.4f}±{std:.4f}"
+
+
+def serialize_result(result: CVExperimentResult) -> dict[str, Any]:
+    payload = asdict(result)
+    payload["output_dir"] = str(result.output_dir)
+    payload["cv_summary_path"] = None if result.cv_summary_path is None else str(result.cv_summary_path)
+    return payload
 
 
 def main() -> None:
@@ -93,6 +196,8 @@ def main() -> None:
             triplet_weight=args.triplet_weight,
             ce_weight=args.ce_weight,
             dropout=args.dropout,
+            early_stopping_patience=args.early_stopping_patience,
+            restore_best_weights=True,
         )
 
         embedding_model = extract_embedding_model(model)
@@ -135,6 +240,13 @@ def main() -> None:
                 retrieval_mode=mode,
                 topn=topn,
             )
+            y_true = [str(item["true_label"]) for item in predictions]
+            y_pred = [str(item["top1_predicted_label"]) for item in predictions]
+            classification_metrics = compute_top1_classification_metrics(
+                y_true,
+                y_pred,
+                labels=sorted(ref_db.keys()),
+            )
             classification = build_classification_metrics(predictions, labels=sorted(ref_db.keys()))
 
             row = {
@@ -144,12 +256,12 @@ def main() -> None:
                 "recall@1": float(summary["recall@1"]),
                 "recall@3": float(summary["recall@3"]),
                 "recall@5": float(summary["recall@5"]),
-                "macro_precision": float(classification["aggregate_metrics"]["macro_precision"]),
-                "macro_recall": float(classification["aggregate_metrics"]["macro_recall"]),
-                "macro_f1": float(classification["aggregate_metrics"]["macro_f1"]),
-                "weighted_precision": float(classification["aggregate_metrics"]["weighted_precision"]),
-                "weighted_recall": float(classification["aggregate_metrics"]["weighted_recall"]),
-                "weighted_f1": float(classification["aggregate_metrics"]["weighted_f1"]),
+                "macro_precision": float(classification_metrics["macro_precision"]),
+                "macro_recall": float(classification_metrics["macro_recall"]),
+                "macro_f1": float(classification_metrics["macro_f1"]),
+                "weighted_precision": float(classification_metrics["weighted_precision"]),
+                "weighted_recall": float(classification_metrics["weighted_recall"]),
+                "weighted_f1": float(classification_metrics["weighted_f1"]),
             }
             fold_metric_rows.append(row)
             fold_eval_summary["retrieval"].append(row)
@@ -229,9 +341,64 @@ def main() -> None:
     aggregate = aggregate_fold_metrics(fold_metric_rows)
     classification_aggregate = aggregate_classification_fold_metrics(fold_metric_rows)
     aggregate_per_class = aggregate_classification_per_class_metrics(fold_per_class_classification_rows)
+    merged_aggregate = merge_aggregate_rows(aggregate, classification_aggregate)
+
+    centroid_row = next(
+        (row for row in merged_aggregate if str(row["retrieval_mode"]).lower() == "centroid"),
+        merged_aggregate[0] if merged_aggregate else None,
+    )
+    if centroid_row is None:
+        raise RuntimeError("No CV aggregate rows were produced.")
+
+    experiment_result = CVExperimentResult(
+        name="retrieval_experiment_cv",
+        description="5-fold CV retrieval experiment",
+        config={
+            "folds_csv": str(args.folds_csv),
+            "img_size": args.img_size,
+            "batch_size": args.batch_size,
+            "epochs": args.epochs,
+            "seed": args.seed,
+            "early_stopping_patience": args.early_stopping_patience,
+            "restore_best_weights": True,
+            "embedding_dim": args.embedding_dim,
+            "learning_rate": args.learning_rate,
+            "triplet_margin": args.triplet_margin,
+            "triplet_weight": args.triplet_weight,
+            "ce_weight": args.ce_weight,
+            "dropout": args.dropout,
+            "reference_mode": args.reference_mode,
+            "max_refs_per_class": args.max_refs_per_class,
+            "retrieval_modes": list(args.retrieval_modes),
+            "topn": args.topn,
+        },
+        output_dir=output_dir,
+        cv_summary_path=output_dir / "cv_summary.json",
+        recall_at_1_mean=float(centroid_row["mean_recall@1"]),
+        recall_at_1_std=float(centroid_row["std_recall@1"]),
+        recall_at_3_mean=float(centroid_row["mean_recall@3"]),
+        recall_at_3_std=float(centroid_row["std_recall@3"]),
+        recall_at_5_mean=float(centroid_row["mean_recall@5"]),
+        recall_at_5_std=float(centroid_row["std_recall@5"]),
+        success=True,
+        macro_precision_mean=float(centroid_row["macro_precision_mean"]),
+        macro_precision_std=float(centroid_row["macro_precision_std"]),
+        macro_recall_mean=float(centroid_row["macro_recall_mean"]),
+        macro_recall_std=float(centroid_row["macro_recall_std"]),
+        macro_f1_mean=float(centroid_row["macro_f1_mean"]),
+        macro_f1_std=float(centroid_row["macro_f1_std"]),
+        weighted_precision_mean=float(centroid_row["weighted_precision_mean"]),
+        weighted_precision_std=float(centroid_row["weighted_precision_std"]),
+        weighted_recall_mean=float(centroid_row["weighted_recall_mean"]),
+        weighted_recall_std=float(centroid_row["weighted_recall_std"]),
+        weighted_f1_mean=float(centroid_row["weighted_f1_mean"]),
+        weighted_f1_std=float(centroid_row["weighted_f1_std"]),
+        error_msg=None,
+    )
+    result_payload = serialize_result(experiment_result)
 
     baseline_compare_rows: list[dict[str, object]] = []
-    for row in aggregate:
+    for row in merged_aggregate:
         for metric in ("recall@1", "recall@3", "recall@5"):
             mean_key = f"mean_{metric}"
             baseline_compare_rows.append(
@@ -270,7 +437,7 @@ def main() -> None:
     write_csv(output_dir / "cv_fold_metrics.csv", fold_metric_rows)
     write_csv(output_dir / "cv_per_class_metrics.csv", per_class_recall_rows)
     write_csv(output_dir / "cv_top1_compare.csv", top1_compare_rows_out)
-    write_csv(output_dir / "cv_aggregate_metrics.csv", aggregate)
+    write_csv(output_dir / "cv_aggregate_metrics.csv", merged_aggregate)
     write_csv(output_dir / "cv_baseline_comparison.csv", baseline_compare_rows)
     write_csv(output_dir / "per_fold_classification_report.csv", fold_classification_rows)
     write_csv(output_dir / "per_fold_confusion_matrix.csv", fold_confusion_rows)
@@ -279,6 +446,7 @@ def main() -> None:
     write_csv(output_dir / "top1_predictions.csv", top1_prediction_rows)
 
     summary = {
+        **result_payload,
         "top_ks": list(TOP_KS),
         "folds_csv": args.folds_csv,
         "settings": {
@@ -286,6 +454,8 @@ def main() -> None:
             "batch_size": args.batch_size,
             "epochs": args.epochs,
             "seed": args.seed,
+            "early_stopping_patience": args.early_stopping_patience,
+            "restore_best_weights": True,
             "embedding_dim": args.embedding_dim,
             "learning_rate": args.learning_rate,
             "triplet_margin": args.triplet_margin,
@@ -297,7 +467,7 @@ def main() -> None:
             "retrieval_modes": args.retrieval_modes,
             "topn": args.topn,
         },
-        "aggregate": aggregate,
+        "aggregate": merged_aggregate,
         "classification_aggregate": classification_aggregate,
         "baseline_val": BASELINE_VAL,
         "baseline_comparison_csv": str(output_dir / "cv_baseline_comparison.csv"),
@@ -316,10 +486,25 @@ def main() -> None:
     }
     save_json(summary, output_dir / "cv_summary.json")
 
-    print("Saved CV fold metrics:", output_dir / "cv_fold_metrics.csv")
-    print("Saved CV aggregate:", output_dir / "cv_aggregate_metrics.csv")
-    print("Saved CV classification aggregate:", output_dir / "aggregate_classification_metrics.csv")
-    print("Saved CV summary JSON:", output_dir / "cv_summary.json")
+    print("[cv] fold metrics:", output_dir / "cv_fold_metrics.csv")
+    print("[cv] aggregate:", output_dir / "cv_aggregate_metrics.csv")
+    print("[cv] class aggregate:", output_dir / "aggregate_classification_metrics.csv")
+    print("[cv] summary:", output_dir / "cv_summary.json")
+    print()
+    print("[cv] summary (mean±std):")
+    for row in merged_aggregate:
+        print(
+            f"  {row['retrieval_mode']} topn={row['topn']}: "
+            f"recall@1={format_mean_std(row['mean_recall@1'], row['std_recall@1'])}, "
+            f"recall@3={format_mean_std(row['mean_recall@3'], row['std_recall@3'])}, "
+            f"recall@5={format_mean_std(row['mean_recall@5'], row['std_recall@5'])}, "
+            f"macro_precision={format_mean_std(row['macro_precision_mean'], row['macro_precision_std'])}, "
+            f"macro_recall={format_mean_std(row['macro_recall_mean'], row['macro_recall_std'])}, "
+            f"macro_f1={format_mean_std(row['macro_f1_mean'], row['macro_f1_std'])}, "
+            f"weighted_precision={format_mean_std(row['weighted_precision_mean'], row['weighted_precision_std'])}, "
+            f"weighted_recall={format_mean_std(row['weighted_recall_mean'], row['weighted_recall_std'])}, "
+            f"weighted_f1={format_mean_std(row['weighted_f1_mean'], row['weighted_f1_std'])}"
+        )
 
 
 if __name__ == "__main__":

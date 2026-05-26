@@ -29,63 +29,24 @@ WHEEL_SCHEMA = [
     "cb",
     "bolt_count",
     "designed_for_models",
-    "generation",
-    "year_from",
-    "year_to",
     "oem_part_code",
-    "notes",
-    "source_type",
-    "source_page",
-    "extraction_confidence",
+    "review_reason",
     "needs_manual_review",
-]
-
-MAPPING_SCHEMA = [
-    "wheel_class_name",
-    "official_wheel_name",
-    "variant_type",
-    "mapping_confidence",
-    "needs_manual_review",
-]
-
-DEFAULT_WHEEL_CLASSES = [
-    "Alaris",
-    "Alcatras",
-    "Braga",
-    "Braga_Diamond_Cut_Black",
-    "Castor",
-    "Denom",
-    "Gemini",
-    "Hawk",
-    "Ilias",
-    "Mytikas",
-    "Mytikas_Black",
-    "Nivalis",
-    "Ratikon",
-    "Steel_Wheel",
-    "Triton",
-    "Trius",
-    "Trius_Black",
-    "Turbine",
-    "Vega",
-    "Velorum",
-    "Xtreme",
 ]
 
 DIMENSION_PATTERN = re.compile(
     r"(?P<width>\d+(?:[\.,]\d+)?)\s*J\s*[xX]\s*(?P<diameter>\d+(?:[\.,]\d+)?)\s*(?:ET\s*(?P<et>[+-]?\d+(?:[\.,]\d+)?))?",
     flags=re.IGNORECASE,
 )
-
-
 PCD_PATTERN = re.compile(r"\b(?P<bolt>\d+)\s*[xX]\s*(?P<diameter>\d+(?:[\.,]\d+)?)\b")
-YEAR_RANGE_PATTERN = re.compile(r"(?P<from>19\d{2}|20\d{2})\s*(?:-|to|–|—)\s*(?P<to>19\d{2}|20\d{2}|present)", re.IGNORECASE)
 OEM_PATTERN = re.compile(r"\b([0-9A-Z]{2,}-[0-9A-Z-]{2,}|[0-9A-Z]{6,})\b")
 
 
+
 def configure_logging(verbose: bool) -> None:
-    level = logging.DEBUG if verbose else logging.INFO
+    level = logging.DEBUG if verbose else logging.WARNING
     logging.basicConfig(level=level, format="%(asctime)s | %(levelname)s | %(message)s")
+
 
 
 def build_session(user_agent: str, retries: int = 3, backoff_factor: float = 0.5) -> requests.Session:
@@ -113,9 +74,11 @@ def build_session(user_agent: str, retries: int = 3, backoff_factor: float = 0.5
     return session
 
 
+
 def sanitize_name(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", value)
     return cleaned.strip("_") or "page"
+
 
 
 def snapshot_html(html: str, url: str, out_dir: Path) -> None:
@@ -127,6 +90,7 @@ def snapshot_html(html: str, url: str, out_dir: Path) -> None:
     out_file.write_text(html, encoding="utf-8")
 
 
+
 def fetch_page(
     session: requests.Session,
     url: str,
@@ -136,7 +100,6 @@ def fetch_page(
     raw_html_dir: Path,
 ) -> str | None:
     try:
-        LOGGER.debug("Fetching %s", url)
         response = session.get(url, timeout=timeout)
         response.raise_for_status()
         html = response.text
@@ -144,9 +107,9 @@ def fetch_page(
             snapshot_html(html, url, raw_html_dir)
         time.sleep(delay_seconds)
         return html
-    except requests.RequestException as exc:
-        LOGGER.warning("Failed to fetch %s: %s", url, exc)
+    except requests.RequestException:
         return None
+
 
 
 def extract_links_from_listing(html: str, listing_url: str) -> list[str]:
@@ -163,6 +126,7 @@ def extract_links_from_listing(html: str, listing_url: str) -> list[str]:
     return sorted(found)
 
 
+
 def parse_float(value: str | None) -> float | None:
     if value is None:
         return None
@@ -175,6 +139,7 @@ def parse_float(value: str | None) -> float | None:
         return None
 
 
+
 def parse_dimensions(text: str) -> dict[str, float | None]:
     match = DIMENSION_PATTERN.search(text)
     if not match:
@@ -184,6 +149,7 @@ def parse_dimensions(text: str) -> dict[str, float | None]:
         "diameter_in": parse_float(match.group("diameter")),
         "et": parse_float(match.group("et")),
     }
+
 
 
 def normalize_wheel_style_name(raw_name: str, source_url: str) -> str:
@@ -198,10 +164,11 @@ def normalize_wheel_style_name(raw_name: str, source_url: str) -> str:
     text = re.sub(r"\s+", " ", text).strip(" -|_")
 
     if text:
-        # Jei pavadinimas triuksmingas, imam paskutini prasminga tokena(us) kaip style label.
         tokens = [tok for tok in re.split(r"\s+", text) if tok]
         if tokens:
-            return " ".join(tokens[-2:]) if len(tokens) > 1 and tokens[-2].isalpha() and tokens[-1].isalpha() else tokens[-1]
+            if len(tokens) > 1 and tokens[-2].isalpha() and tokens[-1].isalpha():
+                return " ".join(tokens[-2:])
+            return tokens[-1]
 
     path = urlparse(source_url).path.lower()
     slug = path.rsplit("/", 1)[-1].replace(".html", "")
@@ -209,6 +176,12 @@ def normalize_wheel_style_name(raw_name: str, source_url: str) -> str:
     if match:
         return match.group("style").replace("-", " ").upper()
     return ""
+
+
+
+def normalize_class_name(name: str) -> str:
+    return re.sub(r"\s+", "_", name.strip())
+
 
 
 def extract_description_text(soup: BeautifulSoup) -> str:
@@ -221,6 +194,7 @@ def extract_description_text(soup: BeautifulSoup) -> str:
         return str(meta_desc.get("content")).strip()
 
     return ""
+
 
 
 def extract_pcd(text: str) -> str | None:
@@ -240,42 +214,50 @@ def extract_pcd(text: str) -> str | None:
     return f"{int(parsed.group('bolt'))}x{parsed.group('diameter').replace(',', '.')}"
 
 
+
+COLOR_PATTERNS: list[tuple[str, str]] = [
+    (r"brushed\s+metallic\s+anthracite", "Brushed Metallic Anthracite"),
+    (r"brushed\s+metallic\s+silver", "Brushed Metallic Silver"),
+    (r"black\s+metallic\s+red", "Black Metallic Red"),
+    (r"anthracite\s+metallic", "Anthracite Metallic"),
+    (r"black\s+metallic", "Black Metallic"),
+    (r"silver\s+metallic", "Silver Metallic"),
+    (r"brilliant\s+silver", "Brilliant Silver"),
+    (r"silver\s+brilliant", "Silver Brilliant"),
+    (r"metallic\s+silver", "Metallic Silver"),
+    (r"glossy\s+black", "Glossy Black"),
+    (r"black\s+matt", "Black Matt"),
+    (r"anthracite", "Anthracite"),
+    (r"black", "Black"),
+]
+
+
 def extract_color_variant(text: str) -> str | None:
     if not text:
         return None
-    lower = text.lower()
-    candidates = [
-        r"brilliant\s+silver\s+metallic\s+finish",
-        r"silver\s+metallic\s+finish",
-        r"silver\s+metallic",
-        r"black\s+metallic\s+finish",
-        r"black\s+metallic",
-        r"anthracite",
-    ]
-    for pattern in candidates:
-        match = re.search(pattern, lower)
-        if match:
-            value = re.sub(r"\s+finish$", "", match.group(0)).strip()
-            if "silver metallic" in value:
-                return "silver metallic"
-            if "black metallic" in value:
-                return "black metallic"
-            return re.sub(r"\s+", " ", value)
-    return None
 
+    normalized = re.sub(r"\s+", " ", text.lower()).strip()
 
-def extract_notes(text: str) -> str | None:
-    if not text:
+    matches: list[tuple[int, str]] = []
+
+    for pattern, canonical_name in COLOR_PATTERNS:
+        for match in re.finditer(pattern, normalized):
+            matches.append((match.start(), canonical_name))
+
+    if not matches:
         return None
-    notes: list[str] = []
-    for pattern in [r"note\s*::\s*([^\.\n]+)", r"note\s*:\s*([^\.\n]+)", r"without\s+center\s+cover"]:
-        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-            value = match.group(1) if match.lastindex else match.group(0)
-            value = re.sub(r"^without", "without", value.strip(), flags=re.IGNORECASE)
-            value = re.sub(r"\s+", " ", value).strip(" .")
-            if value and value.lower() not in [n.lower() for n in notes]:
-                notes.append(value)
-    return " | ".join(notes) if notes else None
+
+    # Paliekam source tvarka, saliname dublikatus
+    ordered_unique: list[str] = []
+    seen: set[str] = set()
+
+    for _, color in sorted(matches, key=lambda item: item[0]):
+        if color not in seen:
+            ordered_unique.append(color)
+            seen.add(color)
+
+    return ", ".join(ordered_unique)
+
 
 
 def extract_designed_models(soup: BeautifulSoup) -> str | None:
@@ -285,16 +267,13 @@ def extract_designed_models(soup: BeautifulSoup) -> str | None:
         value = (option.get("value") or "").strip()
         text = " ".join(option.stripped_strings)
         text = re.sub(r"\s+", " ", text).strip()
-        if not text:
-            continue
-        if value in {"", "0"}:
-            continue
-        if text.lower() == "all models":
+        if not text or value in {"", "0"} or text.lower() == "all models":
             continue
         if text.lower() not in [m.lower() for m in models]:
             models.append(text)
 
     return " | ".join(models) if models else None
+
 
 
 def extract_oem_code_from_page(soup: BeautifulSoup, full_text: str) -> str | None:
@@ -304,21 +283,13 @@ def extract_oem_code_from_page(soup: BeautifulSoup, full_text: str) -> str | Non
     return extract_oem_code(full_text)
 
 
-def extract_year_range(text: str) -> tuple[int | None, int | None]:
-    match = YEAR_RANGE_PATTERN.search(text)
-    if not match:
-        return None, None
-    year_from = int(match.group("from"))
-    year_to_raw = match.group("to").lower()
-    year_to = None if year_to_raw == "present" else int(year_to_raw)
-    return year_from, year_to
-
 
 def extract_oem_code(text: str) -> str | None:
     for item in OEM_PATTERN.findall(text):
         if any(ch.isdigit() for ch in item):
             return item
     return None
+
 
 
 def find_value_after_label(lines: list[str], label_tokens: tuple[str, ...]) -> str | None:
@@ -329,6 +300,7 @@ def find_value_after_label(lines: list[str], label_tokens: tuple[str, ...]) -> s
             if len(parts) == 2 and parts[1].strip():
                 return parts[1].strip()
     return None
+
 
 
 def parse_product_page(url: str, html: str) -> dict[str, Any]:
@@ -344,23 +316,37 @@ def parse_product_page(url: str, html: str) -> dict[str, Any]:
     dim_text = description_text or find_value_after_label(lines, ("dimension", "rim", "size", "j x", "jx")) or page_title
     dims = parse_dimensions(dim_text)
 
-    model_text = extract_designed_models(soup)
-    generation_text = find_value_after_label(lines, ("generation",))
-    notes_text = extract_notes(description_text) or find_value_after_label(lines, ("restriction", "note", "warning", "only"))
-
     pcd = extract_pcd(description_text)
     bolt_count = int(pcd.split("x", 1)[0]) if pcd else None
     cb = parse_float(find_value_after_label(lines, ("center bore", "centre bore", "cb", "dia")))
 
-    # Metu nespeliojam is laisvo teksto, imam tik aiskiai nurodyta generation range.
-    year_from, year_to = extract_year_range(generation_text) if generation_text else (None, None)
     oem_code = extract_oem_code_from_page(soup, full_text)
+    color_variant = extract_color_variant(description_text)
+    designed_for_models = extract_designed_models(soup)
 
-    color_variant = extract_color_variant(description_text) or find_color_variant(page_title)
+    wheel_class_name = normalize_class_name(official_wheel_name) if official_wheel_name else ""
 
-    wheel_class_name = official_wheel_name.title() if official_wheel_name else ""
+    reasons: list[str] = []
+    if not official_wheel_name:
+        reasons.append("missing wheel name")
+    if dims["diameter_in"] is None:
+        reasons.append("missing diameter")
+    if dims["width_j"] is None:
+        reasons.append("missing width")
+    if dims["et"] is None:
+        reasons.append("missing ET")
+    if not pcd:
+        reasons.append("missing PCD")
+    if cb is None:
+        reasons.append("missing CB")
+    if bolt_count is None:
+        reasons.append("missing bolt_count")
+    if not oem_code:
+        reasons.append("missing OEM code")
+    if not designed_for_models:
+        reasons.append("missing designed_for_models")
 
-    record: dict[str, Any] = {
+    return {
         "wheel_class_name": wheel_class_name,
         "official_wheel_name": official_wheel_name,
         "brand": "Skoda",
@@ -371,96 +357,12 @@ def parse_product_page(url: str, html: str) -> dict[str, Any]:
         "pcd": pcd,
         "cb": cb,
         "bolt_count": bolt_count,
-        "designed_for_models": model_text,
-        "generation": None,
-        "year_from": year_from,
-        "year_to": year_to,
+        "designed_for_models": designed_for_models,
         "oem_part_code": oem_code,
-        "notes": notes_text,
-        "source_type": "skoda_parts_reseller",
-        "source_page": url,
-        "extraction_confidence": 0.8,
-        "needs_manual_review": False,
+        "review_reason": " | ".join(reasons) if reasons else None,
+        "needs_manual_review": 1 if reasons else 0,
     }
 
-    critical_missing = [
-        record["official_wheel_name"],
-        record["diameter_in"],
-        record["width_j"],
-        record["et"],
-        record["pcd"],
-        record["oem_part_code"],
-        record["designed_for_models"],
-    ]
-    if any(value in (None, "") for value in critical_missing):
-        record["needs_manual_review"] = True
-        record["extraction_confidence"] = 0.55
-    else:
-        record["needs_manual_review"] = False
-        record["extraction_confidence"] = 0.95
-    return record
-
-
-def find_color_variant(name: str) -> str | None:
-    lower = name.lower()
-    variant_words = ["black metallic", "silver metallic", "diamond cut", "anthracite", "glossy", "matt", "steel", "black", "silver"]
-    found = [w for w in variant_words if w in lower]
-    if not found:
-        return None
-    return found[0]
-
-
-def normalize_name(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", value.lower())
-
-
-def infer_variant_type(class_name: str) -> str:
-    tokens = class_name.split("_")
-    if len(tokens) <= 1:
-        return "base"
-    return "finish_variant"
-
-
-def build_class_mapping(wheel_classes: list[str], official_names: list[str]) -> list[dict[str, Any]]:
-    normalized_official = {normalize_name(name): name for name in official_names if name}
-    rows: list[dict[str, Any]] = []
-
-    for class_name in wheel_classes:
-        parts = class_name.split("_")
-        base = parts[0]
-        base_norm = normalize_name(base)
-        exact_norm = normalize_name(class_name)
-
-        official_name: str | None = None
-        confidence = 0.45
-        review = True
-
-        if exact_norm in normalized_official:
-            official_name = normalized_official[exact_norm]
-            confidence = 0.95
-            review = False
-        elif base_norm in normalized_official:
-            official_name = normalized_official[base_norm]
-            confidence = 0.8
-            review = len(parts) > 1
-        else:
-            for key, value in normalized_official.items():
-                if base_norm and base_norm in key:
-                    official_name = value
-                    confidence = 0.65
-                    review = True
-                    break
-
-        rows.append(
-            {
-                "wheel_class_name": class_name,
-                "official_wheel_name": official_name or base,
-                "variant_type": infer_variant_type(class_name),
-                "mapping_confidence": confidence,
-                "needs_manual_review": review,
-            }
-        )
-    return rows
 
 
 def ensure_schema(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -470,45 +372,37 @@ def ensure_schema(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     return df[columns]
 
 
-def save_outputs(wheels_df: pd.DataFrame, mapping_df: pd.DataFrame, output_dir: Path) -> None:
+
+def save_outputs(wheels_df: pd.DataFrame, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     wheels_csv = output_dir / "wheels.csv"
     wheels_json = output_dir / "wheels.json"
-    mapping_csv = output_dir / "wheel_class_mapping.csv"
 
     wheels_df.to_csv(wheels_csv, index=False, encoding="utf-8")
     wheels_json.write_text(
         json.dumps(wheels_df.where(pd.notna(wheels_df), None).to_dict(orient="records"), indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    mapping_df.to_csv(mapping_csv, index=False, encoding="utf-8")
 
-    LOGGER.info("Saved %s", wheels_csv)
-    LOGGER.info("Saved %s", wheels_json)
-    LOGGER.info("Saved %s", mapping_csv)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Scrape official Skoda wheel pages into normalized wheels dataset.")
-    parser.add_argument("--listing-url", action="append", default=[], help="Official listing page URL. Repeatable.")
-    parser.add_argument("--product-url", action="append", default=[], help="Direct official product page URL. Repeatable.")
-    parser.add_argument("--output-dir", default=".", help="Output directory for wheels files.")
-    parser.add_argument("--timeout", type=int, default=20, help="Request timeout in seconds.")
-    parser.add_argument("--delay", type=float, default=1.0, help="Delay between requests in seconds.")
-    parser.add_argument("--save-raw-html", action="store_true", help="Save raw HTML snapshots for debugging.")
-    parser.add_argument("--raw-html-dir", default="raw_html/wheels", help="Raw HTML output directory.")
-    parser.add_argument("--verbose", action="store_true", help="Enable debug logs.")
-    parser.add_argument(
-        "--wheel-classes",
-        default=",".join(DEFAULT_WHEEL_CLASSES),
-        help="Comma-separated ML class names. Defaults to thesis dataset classes.",
-    )
+    parser = argparse.ArgumentParser(description="Scrape Skoda wheel pages")
+    parser.add_argument("--listing-url", action="append", default=[], help="Listing URL, can be repeated")
+    parser.add_argument("--product-url", action="append", default=[], help="Product URL, can be repeated")
+    parser.add_argument("--output-dir", default=".", help="Output directory")
+    parser.add_argument("--timeout", type=int, default=20, help="Request timeout in seconds")
+    parser.add_argument("--delay", type=float, default=1.0, help="Delay between requests in seconds")
+    parser.add_argument("--save-raw-html", action="store_true", help="Save raw HTML")
+    parser.add_argument("--raw-html-dir", default="raw_html/wheels", help="Raw HTML directory")
+    parser.add_argument("--verbose", action="store_true", help="Enable debug logs")
     parser.add_argument(
         "--user-agent",
-        default="BachelorThesisSkodaWheelResearchBot/1.0 (+contact: local-research)",
-        help="HTTP user-agent header.",
+        default="DudaRimsResearchBot/1.0 (+contact: local-research)",
+        help="HTTP user-agent header",
     )
     return parser.parse_args()
+
 
 
 def main() -> None:
@@ -517,7 +411,6 @@ def main() -> None:
 
     output_dir = Path(args.output_dir)
     raw_html_dir = Path(args.raw_html_dir)
-    wheel_classes = [x.strip() for x in str(args.wheel_classes).split(",") if x.strip()]
 
     session = build_session(user_agent=args.user_agent)
 
@@ -537,10 +430,11 @@ def main() -> None:
         if not html:
             continue
         links = extract_links_from_listing(html, listing_url)
-        LOGGER.info("Discovered %d candidate wheel links from %s", len(links), listing_url)
         discovered_product_urls.update(links)
 
     records: list[dict[str, Any]] = []
+    fetched_count = 0
+    failed_fetches = 0
     for product_url in sorted(discovered_product_urls):
         html = fetch_page(
             session=session,
@@ -551,27 +445,30 @@ def main() -> None:
             raw_html_dir=raw_html_dir,
         )
         if not html:
+            failed_fetches += 1
             continue
-        records.append(parse_product_page(product_url, html))
+        fetched_count += 1
+        try:
+            records.append(parse_product_page(product_url, html))
+        except Exception:
+            failed_fetches += 1
 
     wheels_df = pd.DataFrame(records)
     wheels_df = ensure_schema(wheels_df, WHEEL_SCHEMA)
 
-    mapping_rows = build_class_mapping(wheel_classes=wheel_classes, official_names=wheels_df["official_wheel_name"].dropna().astype(str).tolist())
-    mapping_df = pd.DataFrame(mapping_rows)
-    mapping_df = ensure_schema(mapping_df, MAPPING_SCHEMA)
+    # Normalizuoja rankini perziuros flaga i 0/1 reiksmes
+    wheels_df["needs_manual_review"] = wheels_df["needs_manual_review"].fillna(0).astype(int).clip(lower=0, upper=1)
 
-    name_to_class = {
-        normalize_name(str(row["official_wheel_name"])): str(row["wheel_class_name"]) for _, row in mapping_df.iterrows() if row["official_wheel_name"]
-    }
+    save_outputs(wheels_df=wheels_df, output_dir=output_dir)
 
-    wheel_class_values: list[str] = []
-    for _, row in wheels_df.iterrows():
-        normalized = normalize_name(str(row["official_wheel_name"]))
-        wheel_class_values.append(name_to_class.get(normalized, ""))
-    wheels_df["wheel_class_name"] = wheel_class_values
-
-    save_outputs(wheels_df=wheels_df, mapping_df=mapping_df, output_dir=output_dir)
+    discovered_count = len(discovered_product_urls)
+    exported_rows = len(wheels_df)
+    manual_review_count = int(wheels_df[wheels_df.get("needs_manual_review") == 1].shape[0]) if exported_rows else 0
+    print(f"[scrape] discovered: {discovered_count}")
+    print(f"[scrape] fetched: {fetched_count}")
+    print(f"[scrape] failed: {failed_fetches}")
+    print(f"[scrape] rows: {exported_rows}")
+    print(f"[scrape] manual: {manual_review_count}")
 
 
 if __name__ == "__main__":

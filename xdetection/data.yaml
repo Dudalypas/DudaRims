@@ -1,0 +1,7 @@
+path: C:/Users/vilja/Desktop/Wheel_Detection
+train: train/images
+val: val/images
+test: test/images
+
+names:
+  0: wheel
