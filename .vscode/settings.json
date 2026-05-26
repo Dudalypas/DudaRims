@@ -1,9 +1,0 @@
-{
-    "git.ignoreLimitWarning": true,
-    "chat.tools.terminal.autoApprove": {
-        "/^python -m py_compile xtools/generate_reference_embeddings\\.py xtools/evaluate_retrieval\\.py xtools/debug_refined_crops\\.py$/": {
-            "approve": true,
-            "matchCommandLine": true
-        }
-    }
-}
