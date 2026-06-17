@@ -118,15 +118,15 @@ class FitmentChecker {
       );
     }
 
-    final ok = rimCb >= carCb;
+    final ok = rimCb == carCb;
     return FitmentParameterCheck(
       parameter: FitmentParameter.cb,
       rimValue: _formatNum(rimCb),
-      expectedValue: '≥ ${_formatNum(carCb)}',
+      expectedValue: '= ${_formatNum(carCb)}',
       status: ok ? FitmentParameterStatus.ok : FitmentParameterStatus.fail,
       message: ok
           ? 'CB sutampa.'
-          : 'CB per mažas: ${_formatNum(rimCb)} mm, reikalinga bent ${_formatNum(carCb)} mm.',
+          : 'CB nesutampa: ${_formatNum(rimCb)} mm, reikalinga ${_formatNum(carCb)} mm.',
       isCritical: true,
     );
   }

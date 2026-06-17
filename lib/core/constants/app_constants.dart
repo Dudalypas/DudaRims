@@ -16,7 +16,7 @@ class AppConstants {
   // Jungiklis leidzia testuoti UI eiga be realaus ML vykdymo
   static const bool enableRealMlInference = true;
 
-  static const bool enablePipelineDebugLogs = false;
+  static const bool enablePipelineDebugLogs = true;
 
   static const String embeddingModelAsset =
       'assets/models/wheel_embedding_experiment_v2_float32.tflite';
@@ -45,10 +45,10 @@ class AppConstants {
   static const double retrievalMinTop1Similarity = 0.56;
   static const double retrievalMinTop1Top2Margin = 0.008;
   static const double recognitionStrongSimilarityThreshold = 0.82;
-static const double recognitionLowSimilarityThreshold = 0.15;
+  static const double recognitionLowSimilarityThreshold = 0.15;
 
-  // Eksperimentinis centrinio apkirpimo rezimas, galutineje grandineje isjungtas
-  static const bool enableCenteredRimOnlyFallback = false;
+  // Eksperimentinis centrinio apkirpimo rezimas
+  static const bool enableCenteredRimOnlyFallback = true;
   static const double rimOnlyFallbackCenteredCropRatio = 0.86;
   static const double rimOnlyFallbackCenterEnergyMinRatio = 0.52;
   static const double rimOnlyFallbackMinTop1Similarity = 0.78;

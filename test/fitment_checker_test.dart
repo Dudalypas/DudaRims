@@ -86,7 +86,7 @@ void main() {
       });
     });
 
-    group('CB (centrinis anga) tikrinimas', () {
+    group('CB (centrinė anga) tikrinimas', () {
       test('CB = autom. min => gerai', () {
         final result = checker.check(wheel(cb: 57.1), octaviaMk2());
         final cbCheck =
@@ -94,11 +94,11 @@ void main() {
         expect(cbCheck.status, FitmentParameterStatus.ok);
       });
 
-      test('CB didesnis už autom. min => gerai', () {
+      test('CB didesnis už autom. min => nesuderinama', () {
         final result = checker.check(wheel(cb: 66.6), octaviaMk2());
         final cbCheck =
             result.checks.firstWhere((c) => c.parameter == FitmentParameter.cb);
-        expect(cbCheck.status, FitmentParameterStatus.ok);
+        expect(cbCheck.status, FitmentParameterStatus.fail);
       });
 
       test('CB mažesnis už autom. min => nesuderinama', () {
@@ -274,7 +274,7 @@ void main() {
     });
 
     group('Kelių parametrų scenarijai', () {
-      test('kelios įspėjimai, nėra klaidų => atsargumas', () {
+      test('keli įspėjimai, nėra klaidų => atsargumas', () {
         final result = checker.check(
           wheel(diameter: 14.2, width: 7.9, et: 45.0),
           octaviaMk2(),
@@ -288,7 +288,7 @@ void main() {
         expect(warningCount.length, greaterThanOrEqualTo(2));
       });
 
-      test('kelios įspėjimai + 1 klaida => nesuderinama', () {
+      test('keli įspėjimai + 1 klaida => nesuderinama', () {
         final xtremeTire = wheel(
           diameter: 20.0,
           width: 8.0,
